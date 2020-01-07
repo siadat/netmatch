@@ -18,7 +18,7 @@ import (
 type Params struct {
 	Event      string            `json:"event"`
 	Actor      string            `json:"actor"`
-	Value      string            `json:"in_value"`
+	Payload    string            `json:"payload"`
 	Labels     map[string]string `json:"labels"`
 	Selector   string            `json:"selector"`
 	MateWanted int               `json:"mate_wanted"`
@@ -31,12 +31,12 @@ type EventActorMessage struct {
 	OutChan   chan OutValue   `json:"-"`
 	MatchChan chan string     `json:"-"`
 	Selector  labels.Selector `json:"-"`
-	Labels    labels.Set      `json:"labels"`
+	Labels    labels.Set      `json:"-"`
 	CreatedAt time.Time       `json:"created_at"`
 }
 
 type OutValue struct {
-	Values map[string]string `json:"values"`
+	Payloads map[string]string `json:"payloads"`
 }
 
 type EventToActorToRequestMap struct {
@@ -54,7 +54,7 @@ type LogEvent struct {
 	Selector   string     `json:"selector"`
 	Labels     labels.Set `json:"labels"`
 	MateWanted int        `json:"mate_wanted"`
-	Value      string     `json:"value"`
+	Payload    string     `json:"payload"`
 	Pending    int32      `json:"pending"`
 	Age        float64    `json:"age"`
 }
@@ -142,11 +142,11 @@ func NewSyncnet() *Syncnet {
 			if ok {
 				rids := make([]string, 0, len(requests))
 				outValue := OutValue{
-					Values: map[string]string{},
+					Payloads: map[string]string{},
 				}
 
 				for _, req := range requests {
-					outValue.Values[req.Params.Actor] = req.Params.Value
+					outValue.Payloads[req.Params.Actor] = req.Params.Payload
 					rids = append(rids, req.RID)
 				}
 				for _, req := range requests {
@@ -248,7 +248,7 @@ func (sn *Syncnet) NewHandler() http.Handler {
 		rid := RandStringRunes(8)
 		event := r.URL.Query().Get("event")
 		actor := r.URL.Query().Get("actor")
-		value := r.URL.Query().Get("value")
+		payload := r.URL.Query().Get("payload")
 
 		mateCount := 1
 		selector := fmt.Sprintf("actor != %s", actor)
@@ -275,7 +275,7 @@ func (sn *Syncnet) NewHandler() http.Handler {
 		params := Params{
 			Event:      event,
 			Actor:      actor,
-			Value:      value,
+			Payload:    payload,
 			Labels:     labels.Set{"actor": actor},
 			Selector:   selector,
 			MateWanted: mateCount,
@@ -340,7 +340,7 @@ func newLog(eventReq EventActorMessage, msg string, pendingCounter int32, matchI
 		Pending:    pendingCounter,
 		Msg:        msg,
 		Time:       time.Now(),
-		Value:      eventReq.Params.Value,
+		Payload:    eventReq.Params.Payload,
 		Age:        time.Since(eventReq.CreatedAt).Seconds(),
 	}))
 }

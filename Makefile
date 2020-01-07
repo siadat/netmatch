@@ -1,7 +1,10 @@
 test:
 	go test -count 1 -race ./... 
 
-run:
+serve:
+	go run cmd/syncnet/main.go
+
+test_python:
 	goreman -f Procfile start
 
 all:
