@@ -1,11 +1,11 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math/rand"
 	"net/http"
-	"sync"
 	"sync/atomic"
 )
 
@@ -23,113 +23,161 @@ func LogEventString(e LogEvent) string {
 	return string(byts)
 }
 
-type Event struct {
-	Chan   chan string
-	LogIn  sync.Once
-	LogOut sync.Once
+type EventActorMessage struct {
+	RID        string          `json:"-"`
+	Event      string          `json:"-"`
+	Actor      string          `json:"-"`
+	ReadyValue chan string     `json:"-"`
+	Context    context.Context `json:"-"`
 }
 
 func main() {
 	var addr = ":8080" // os.Args[1]
-	fmt.Println("Routes:")
-	fmt.Println("  GET /spec?event=xxx")
-	fmt.Println("  GET /impl?event=xxx&value=yyy")
 	fmt.Printf("Listening on %s\n", addr)
 
-	chanCollection := map[string](chan string){}
-	chanCollectionLock := sync.RWMutex{}
 	var pendingCounter int32
-	// state := []int{}
 
-	http.HandleFunc("/spec", func(rw http.ResponseWriter, r *http.Request) {
-		rid := RandStringRunes(4)
-		event := r.URL.Query().Get("event")
-		ch := getChan(chanCollection, &chanCollectionLock, event)
-		var value string
-		isUnavailable := false
-		// this select is just a test to make sure we
-		// print logs if it is unavailable.
-		select {
-		case value = <-ch:
-		default:
-			isUnavailable = true
+	eventRequestChan := make(chan EventActorMessage)
+	eventToActorToRequestMap := map[string]map[string]map[string]EventActorMessage{}
+
+	printState := func() {
+		if true {
+			return
 		}
+		fmt.Println("# State:")
+		for event, actorToRequestMap := range eventToActorToRequestMap {
+			fmt.Printf("  event = %+v\n", event)
+			for actorName, pendingRequests := range actorToRequestMap {
+				fmt.Printf("  actorName = %+v\n", actorName)
+				for rid := range pendingRequests {
+					fmt.Printf("  rid = %+v\n", rid)
+				}
+			}
+		}
+		fmt.Println("# State end.")
+	}
 
-		if isUnavailable {
-			message := "-Done"
-			who := []string{"Spec"}
+	cleanChan := make(chan string)
+
+	go func() {
+		for {
+			completedRID := <-cleanChan
+			func() {
+				for _, actorToRequestMap := range eventToActorToRequestMap {
+					for actorName, pendingRequests := range actorToRequestMap {
+						for rid, eventReq := range pendingRequests {
+							if rid == completedRID {
+								delete(pendingRequests, rid)
+								if len(pendingRequests) == 0 {
+									delete(actorToRequestMap, actorName)
+								}
+								if len(actorToRequestMap) == 0 {
+									delete(eventToActorToRequestMap, eventReq.Event)
+								}
+								return
+							}
+						}
+					}
+				}
+			}()
+			printState()
+		}
+	}()
+
+	go func() {
+	REQ_LOOP:
+		for {
+			printState()
+			eventReq := <-eventRequestChan
+
 			atomic.AddInt32(&pendingCounter, 1)
 			fmt.Println(LogEventString(LogEvent{
-				RID:     rid,
-				Who:     who,
-				Event:   event,
+				RID:     eventReq.RID,
+				Who:     []string{eventReq.Actor},
+				Event:   eventReq.Event,
 				Pending: atomic.LoadInt32(&pendingCounter),
 				Msg:     "+Waiting",
 			}))
-			defer func() {
+
+			go func() {
+				<-eventReq.Context.Done()
+				cleanChan <- eventReq.RID
+
+				atomic.AddInt32(&pendingCounter, -1)
 				fmt.Println(LogEventString(LogEvent{
-					RID:     rid,
-					Who:     who,
-					Event:   event,
+					RID:     eventReq.RID,
+					Who:     []string{eventReq.Actor},
+					Event:   eventReq.Event,
 					Pending: atomic.LoadInt32(&pendingCounter),
-					Msg:     message,
+					Msg:     "-Done",
 				}))
 			}()
-			defer atomic.AddInt32(&pendingCounter, -1)
 
-			select {
-			case value = <-ch:
-				who = []string{"Impl", "Spec"}
-			case <-r.Context().Done():
-				message = "-Cancelled"
+			if actorToRequestMap, ok := eventToActorToRequestMap[eventReq.Event]; ok {
+				for actorName, actorPendingReqs := range actorToRequestMap {
+					if actorName == eventReq.Actor {
+						continue
+					}
+
+					for _, pendingReq := range actorPendingReqs {
+						select {
+						case pendingReq.ReadyValue <- "ready":
+						case <-pendingReq.Context.Done():
+							continue
+						}
+
+						select {
+						case eventReq.ReadyValue <- "ready":
+						case <-eventReq.Context.Done():
+							continue REQ_LOOP
+						}
+
+						// successfully delivered to both
+						continue REQ_LOOP
+					}
+				}
 			}
-		}
 
-		rw.Write([]byte(value + "\n"))
+			// if we are here, it means no other actor was
+			// listening, or eventToActorToRequestMap has not
+			// cleaned up cancelled or done requests yet.
+
+			if _, ok := eventToActorToRequestMap[eventReq.Event]; !ok {
+				eventToActorToRequestMap[eventReq.Event] = map[string]map[string]EventActorMessage{}
+			}
+			if _, ok := eventToActorToRequestMap[eventReq.Event][eventReq.Actor]; !ok {
+				eventToActorToRequestMap[eventReq.Event][eventReq.Actor] = map[string]EventActorMessage{}
+			}
+			eventToActorToRequestMap[eventReq.Event][eventReq.Actor][eventReq.RID] = eventReq
+
+		}
+	}()
+
+	http.HandleFunc("/stats", func(rw http.ResponseWriter, r *http.Request) {
+		byts, err := json.Marshal(eventToActorToRequestMap)
+		check(err)
+		rw.Write(byts)
+		rw.Write([]byte("\n"))
 	})
 
-	http.HandleFunc("/impl", func(rw http.ResponseWriter, r *http.Request) {
-		rid := RandStringRunes(4)
+	http.HandleFunc("/event", func(rw http.ResponseWriter, r *http.Request) {
+		rid := RandStringRunes(8)
 		event := r.URL.Query().Get("event")
-		value := r.URL.Query().Get("value")
-		ch := getChan(chanCollection, &chanCollectionLock, event)
-		isUnavailable := false
-		// this select is just a test to make sure we print
-		// logs if it is unavailable.
-		select {
-		case ch <- value:
-		default:
-			isUnavailable = true
+		actor := r.URL.Query().Get("actor")
+
+		readyChan := make(chan string)
+		eventRequestChan <- EventActorMessage{
+			RID:        rid,
+			Event:      event,
+			Actor:      actor,
+			ReadyValue: readyChan,
+			Context:    r.Context(),
 		}
 
-		if isUnavailable {
-			message := "-Done"
-			who := []string{"Impl"}
-			atomic.AddInt32(&pendingCounter, 1)
-			fmt.Println(LogEventString(LogEvent{
-				RID:     rid,
-				Who:     who,
-				Event:   event,
-				Pending: atomic.LoadInt32(&pendingCounter),
-				Msg:     "+Waiting",
-			}))
-			defer func() {
-				fmt.Println(LogEventString(LogEvent{
-					RID:     rid,
-					Who:     who,
-					Event:   event,
-					Pending: atomic.LoadInt32(&pendingCounter),
-					Msg:     message,
-				}))
-			}()
-			defer atomic.AddInt32(&pendingCounter, -1)
-
-			select {
-			case ch <- value:
-				who = []string{"Impl", "Spec"}
-			case <-r.Context().Done():
-				message = "-Cancelled"
-			}
+		select {
+		case value := <-readyChan:
+			rw.Write([]byte(value + "\n"))
+		case <-r.Context().Done():
 		}
 	})
 
@@ -151,16 +199,4 @@ func check(err error) {
 	if err != nil {
 		panic(err)
 	}
-}
-
-func getChan(chanCollection map[string]chan string, chanCollectionLock *sync.RWMutex, event string) chan string {
-	chanCollectionLock.Lock()
-	ch, ok := chanCollection[event]
-	if !ok {
-		ch = make(chan string)
-		chanCollection[event] = ch
-
-	}
-	chanCollectionLock.Unlock()
-	return ch
 }
