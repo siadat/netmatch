@@ -1,5 +1,5 @@
 test:
-	go test -count 1 -v -race ./... 
+	go test -count 1 -race ./... 
 
 run:
 	goreman -f Procfile start

@@ -11,7 +11,7 @@ func main() {
 	var addr = ":8080"
 	fmt.Printf("Listening on %s\n", addr)
 
-	err := http.ListenAndServe(addr, syncnet.NewHandler())
+	err := http.ListenAndServe(addr, syncnet.NewSyncnet().NewHandler())
 	if err != nil {
 		panic(err)
 	}

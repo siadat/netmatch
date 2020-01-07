@@ -33,7 +33,91 @@ func (req *testRequestStruct) URL() string {
 }
 
 func TestBasic(t *testing.T) {
-	ts := httptest.NewServer(syncnet.NewHandler())
+	requests := []syncnet.Params{
+		{
+			Event: "e",
+			Actor: "a1",
+			Value: "v1",
+		},
+		{
+			Event: "e",
+			Actor: "a2",
+			Value: "v2",
+		},
+	}
+
+	sn := syncnet.NewSyncnet()
+	wg := sync.WaitGroup{}
+	for _, p := range requests {
+		wg.Add(1)
+		go func(p syncnet.Params) {
+			defer wg.Done()
+
+			ch, err := sn.Send(p)
+			require.NoError(t, err)
+
+			outValue := <-ch
+
+			require.Equal(t, 2, len(outValue.Values))
+			require.Equal(t, "v1", outValue.Values["a1"])
+			require.Equal(t, "v2", outValue.Values["a2"])
+		}(p)
+	}
+	wg.Wait()
+}
+
+func TestBasicTriplet(t *testing.T) {
+	ctx, _ := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	requests := []syncnet.Params{
+		{
+			Event:      "e",
+			Actor:      "a1",
+			Value:      "v1",
+			MateWanted: 2,
+			Context:    ctx,
+		},
+		{
+			Event:      "e",
+			Actor:      "a2",
+			Value:      "v2",
+			MateWanted: 2,
+			Context:    ctx,
+		},
+		{
+			Event:      "e",
+			Actor:      "a3",
+			Value:      "v3",
+			MateWanted: 2,
+			Context:    ctx,
+		},
+	}
+
+	sn := syncnet.NewSyncnet()
+	wg := sync.WaitGroup{}
+	for _, p := range requests {
+		wg.Add(1)
+		go func(p syncnet.Params) {
+			defer wg.Done()
+
+			ch, err := sn.Send(p)
+			require.NoError(t, err)
+
+			select {
+			case outValue := <-ch:
+				require.Equal(t, 3, len(outValue.Values))
+				require.Equal(t, "v1", outValue.Values["a1"])
+				require.Equal(t, "v2", outValue.Values["a2"])
+				require.Equal(t, "v3", outValue.Values["a3"])
+			case <-ctx.Done():
+			}
+
+		}(p)
+	}
+	wg.Wait()
+}
+
+func TestHttpBasic(t *testing.T) {
+	ts := httptest.NewServer(syncnet.NewSyncnet().NewHandler())
 	defer ts.Close()
 
 	requests := []testRequestStruct{
@@ -77,8 +161,8 @@ func TestBasic(t *testing.T) {
 	wg.Wait()
 }
 
-func TestMustBlock(t *testing.T) {
-	ts := httptest.NewServer(syncnet.NewHandler())
+func TestHttpMustBlock(t *testing.T) {
+	ts := httptest.NewServer(syncnet.NewSyncnet().NewHandler())
 	defer ts.Close()
 
 	requests := []testRequestStruct{
@@ -115,8 +199,8 @@ func TestMustBlock(t *testing.T) {
 	wg.Wait()
 }
 
-func TestMustBlockBecauseOfSelector(t *testing.T) {
-	ts := httptest.NewServer(syncnet.NewHandler())
+func TestHttpMustBlockBecauseOfSelector(t *testing.T) {
+	ts := httptest.NewServer(syncnet.NewSyncnet().NewHandler())
 	defer ts.Close()
 
 	requests := []testRequestStruct{
