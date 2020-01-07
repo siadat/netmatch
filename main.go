@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -28,6 +29,7 @@ type EventActorMessage struct {
 	Actor     string          `json:"-"`
 	OutChan   chan []byte     `json:"-"`
 	Context   context.Context `json:"-"`
+	GroupSize int             `json:"group_size"`
 	InValue   string          `json:"in_value"`
 	CreatedAt time.Time       `json:"created_at"`
 }
@@ -44,9 +46,10 @@ func main() {
 	var pendingCounter int32
 	eventRequestChan := make(chan EventActorMessage)
 	eventToActorToRequestMap := EventToActorToRequestMap{
-		Map: map[string]map[string]map[string]EventActorMessage{},
+		Map: make(map[string]map[string]map[string]EventActorMessage),
 		mu:  &sync.RWMutex{},
 	}
+
 	cleanChan := make(chan string)
 
 	go func() {
@@ -63,13 +66,14 @@ func main() {
 
 			go func(eventReq EventActorMessage) {
 				<-eventReq.Context.Done()
-				cleanChan <- eventReq.RID
-
 				atomic.AddInt32(&pendingCounter, -1)
 				fmt.Println(newLog(eventReq, "-", atomic.LoadInt32(&pendingCounter)))
 			}(eventReq)
 
-			success := func() bool {
+			requests, ok := func(eventReq EventActorMessage) ([]EventActorMessage, bool) {
+				requests := []EventActorMessage{eventReq}
+				maxGroupSize := eventReq.GroupSize
+
 				eventToActorToRequestMap.mu.RLock()
 				defer eventToActorToRequestMap.mu.RUnlock()
 
@@ -80,32 +84,41 @@ func main() {
 						}
 
 						for _, pendingReq := range actorPendingReqs {
-							outValue := map[string]string{}
-							outValue[pendingReq.Actor] = pendingReq.InValue
-							outValue[eventReq.Actor] = eventReq.InValue
-							jsonByts := mustMarshalJson(outValue)
-
 							select {
-							case pendingReq.OutChan <- jsonByts:
 							case <-pendingReq.Context.Done():
 								continue
+							default:
+								requests = append(requests, pendingReq)
+								if maxGroupSize < pendingReq.GroupSize {
+									maxGroupSize = pendingReq.GroupSize
+								}
 							}
 
-							select {
-							case eventReq.OutChan <- jsonByts:
-							case <-eventReq.Context.Done():
-								return true
+							if len(requests) == maxGroupSize {
+								return requests, true
 							}
-
-							// successfully delivered to both
-							return true
 						}
 					}
 				}
-				return false
-			}()
+				return []EventActorMessage{}, false
+			}(eventReq)
 
-			if success {
+			if ok {
+				outValue := map[string]string{}
+
+				for _, req := range requests {
+					outValue[req.Actor] = req.InValue
+				}
+
+				jsonByts := mustMarshalJson(outValue)
+
+				for _, req := range requests {
+					select {
+					case req.OutChan <- jsonByts:
+					case <-req.Context.Done():
+					}
+				}
+
 				continue
 			}
 
@@ -124,6 +137,11 @@ func main() {
 					eventToActorToRequestMap.Map[eventReq.Event][eventReq.Actor] = map[string]EventActorMessage{}
 				}
 				eventToActorToRequestMap.Map[eventReq.Event][eventReq.Actor][eventReq.RID] = eventReq
+
+				go func(eventReq EventActorMessage) {
+					<-eventReq.Context.Done()
+					cleanChan <- eventReq.RID
+				}(eventReq)
 			}()
 
 		}
@@ -142,6 +160,16 @@ func main() {
 		event := r.URL.Query().Get("event")
 		actor := r.URL.Query().Get("actor")
 		value := r.URL.Query().Get("value")
+		size := 2
+
+		if r.URL.Query().Get("size") != "" {
+			var err error
+			size, err = strconv.Atoi(r.URL.Query().Get("size"))
+			if err != nil {
+				rw.Write([]byte("size must be int\n"))
+				return
+			}
+		}
 
 		readyChan := make(chan []byte)
 		eventRequestChan <- EventActorMessage{
@@ -152,6 +180,7 @@ func main() {
 			InValue:   value,
 			CreatedAt: time.Now(),
 			Context:   r.Context(),
+			GroupSize: size,
 		}
 
 		select {
