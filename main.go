@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -21,157 +22,118 @@ type LogEvent struct {
 	Age     float64   `json:"age"`
 }
 
-func mustMarshalJson(v interface{}) []byte {
-	byts, err := json.Marshal(v)
-	check(err)
-	return byts
+type EventActorMessage struct {
+	RID       string          `json:"-"`
+	Event     string          `json:"-"`
+	Actor     string          `json:"-"`
+	OutChan   chan []byte     `json:"-"`
+	Context   context.Context `json:"-"`
+	InValue   string          `json:"in_value"`
+	CreatedAt time.Time       `json:"created_at"`
 }
 
-type EventActorMessage struct {
-	RID           string          `json:"-"`
-	Event         string          `json:"-"`
-	Actor         string          `json:"-"`
-	OutValueReady chan []byte     `json:"-"`
-	Context       context.Context `json:"-"`
-	InValue       string          `json:"in_value"`
-	CreatedAt     time.Time       `json:"created_at"`
+type EventToActorToRequestMap struct {
+	Map map[string]map[string]map[string]EventActorMessage
+	mu  *sync.RWMutex
 }
 
 func main() {
-	var addr = ":8080" // os.Args[1]
+	var addr = ":8080"
 	fmt.Printf("Listening on %s\n", addr)
 
 	var pendingCounter int32
-
 	eventRequestChan := make(chan EventActorMessage)
-	eventToActorToRequestMap := map[string]map[string]map[string]EventActorMessage{}
-
-	printState := func() {
-		if true {
-			return
-		}
-		fmt.Println("# State:")
-		for event, actorToRequestMap := range eventToActorToRequestMap {
-			fmt.Printf("  event = %+v\n", event)
-			for actorName, pendingRequests := range actorToRequestMap {
-				fmt.Printf("  actorName = %+v\n", actorName)
-				for rid := range pendingRequests {
-					fmt.Printf("  rid = %+v\n", rid)
-				}
-			}
-		}
-		fmt.Println("# State end.")
+	eventToActorToRequestMap := EventToActorToRequestMap{
+		Map: map[string]map[string]map[string]EventActorMessage{},
+		mu:  &sync.RWMutex{},
 	}
-
 	cleanChan := make(chan string)
 
 	go func() {
 		for {
 			completedRID := <-cleanChan
-			func() {
-				for _, actorToRequestMap := range eventToActorToRequestMap {
-					for actorName, pendingRequests := range actorToRequestMap {
-						for rid, eventReq := range pendingRequests {
-							if rid == completedRID {
-								delete(pendingRequests, rid)
-								if len(pendingRequests) == 0 {
-									delete(actorToRequestMap, actorName)
-								}
-								if len(actorToRequestMap) == 0 {
-									delete(eventToActorToRequestMap, eventReq.Event)
-								}
-								return
-							}
-						}
-					}
-				}
-			}()
-			printState()
+			cleanMap(eventToActorToRequestMap, completedRID)
 		}
 	}()
 
 	go func() {
-	REQ_LOOP:
-		for {
-			printState()
-			eventReq := <-eventRequestChan
-
+		for eventReq := range eventRequestChan {
 			atomic.AddInt32(&pendingCounter, 1)
-			fmt.Println(string(mustMarshalJson(LogEvent{
-				RID:     eventReq.RID,
-				Actor:   eventReq.Actor,
-				Event:   eventReq.Event,
-				Pending: atomic.LoadInt32(&pendingCounter),
-				Msg:     "+",
-				Time:    time.Now(),
-				Value:   eventReq.InValue,
-				Age:     time.Since(eventReq.CreatedAt).Seconds(),
-			})))
+			fmt.Println(newLog(eventReq, "+", atomic.LoadInt32(&pendingCounter)))
 
-			go func() {
+			go func(eventReq EventActorMessage) {
 				<-eventReq.Context.Done()
 				cleanChan <- eventReq.RID
 
 				atomic.AddInt32(&pendingCounter, -1)
-				fmt.Println(string(mustMarshalJson(LogEvent{
-					RID:     eventReq.RID,
-					Actor:   eventReq.Actor,
-					Event:   eventReq.Event,
-					Pending: atomic.LoadInt32(&pendingCounter),
-					Msg:     "-",
-					Time:    time.Now(),
-					Value:   eventReq.InValue,
-					Age:     time.Since(eventReq.CreatedAt).Seconds(),
-				})))
-			}()
+				fmt.Println(newLog(eventReq, "-", atomic.LoadInt32(&pendingCounter)))
+			}(eventReq)
 
-			if actorToRequestMap, ok := eventToActorToRequestMap[eventReq.Event]; ok {
-				for actorName, actorPendingReqs := range actorToRequestMap {
-					if actorName == eventReq.Actor {
-						continue
-					}
+			success := func() bool {
+				eventToActorToRequestMap.mu.RLock()
+				defer eventToActorToRequestMap.mu.RUnlock()
 
-					for _, pendingReq := range actorPendingReqs {
-						outValue := map[string]string{}
-						outValue[pendingReq.Actor] = pendingReq.InValue
-						outValue[eventReq.Actor] = eventReq.InValue
-						jsonByts := mustMarshalJson(outValue)
-
-						select {
-						case pendingReq.OutValueReady <- jsonByts:
-						case <-pendingReq.Context.Done():
+				if actorToRequestMap, ok := eventToActorToRequestMap.Map[eventReq.Event]; ok {
+					for actorName, actorPendingReqs := range actorToRequestMap {
+						if actorName == eventReq.Actor {
 							continue
 						}
 
-						select {
-						case eventReq.OutValueReady <- jsonByts:
-						case <-eventReq.Context.Done():
-							continue REQ_LOOP
-						}
+						for _, pendingReq := range actorPendingReqs {
+							outValue := map[string]string{}
+							outValue[pendingReq.Actor] = pendingReq.InValue
+							outValue[eventReq.Actor] = eventReq.InValue
+							jsonByts := mustMarshalJson(outValue)
 
-						// successfully delivered to both
-						continue REQ_LOOP
+							select {
+							case pendingReq.OutChan <- jsonByts:
+							case <-pendingReq.Context.Done():
+								continue
+							}
+
+							select {
+							case eventReq.OutChan <- jsonByts:
+							case <-eventReq.Context.Done():
+								return true
+							}
+
+							// successfully delivered to both
+							return true
+						}
 					}
 				}
+				return false
+			}()
+
+			if success {
+				continue
 			}
 
 			// if we are here, it means no other actor was
 			// listening, or eventToActorToRequestMap has not
 			// cleaned up cancelled or done requests yet.
 
-			if _, ok := eventToActorToRequestMap[eventReq.Event]; !ok {
-				eventToActorToRequestMap[eventReq.Event] = map[string]map[string]EventActorMessage{}
-			}
-			if _, ok := eventToActorToRequestMap[eventReq.Event][eventReq.Actor]; !ok {
-				eventToActorToRequestMap[eventReq.Event][eventReq.Actor] = map[string]EventActorMessage{}
-			}
-			eventToActorToRequestMap[eventReq.Event][eventReq.Actor][eventReq.RID] = eventReq
+			func() {
+				eventToActorToRequestMap.mu.Lock()
+				defer eventToActorToRequestMap.mu.Unlock()
+
+				if _, ok := eventToActorToRequestMap.Map[eventReq.Event]; !ok {
+					eventToActorToRequestMap.Map[eventReq.Event] = map[string]map[string]EventActorMessage{}
+				}
+				if _, ok := eventToActorToRequestMap.Map[eventReq.Event][eventReq.Actor]; !ok {
+					eventToActorToRequestMap.Map[eventReq.Event][eventReq.Actor] = map[string]EventActorMessage{}
+				}
+				eventToActorToRequestMap.Map[eventReq.Event][eventReq.Actor][eventReq.RID] = eventReq
+			}()
 
 		}
 	}()
 
 	http.HandleFunc("/stats", func(rw http.ResponseWriter, r *http.Request) {
-		rw.Write(mustMarshalJson(eventToActorToRequestMap))
+		eventToActorToRequestMap.mu.RLock()
+		defer eventToActorToRequestMap.mu.RUnlock()
+
+		rw.Write(mustMarshalJson(eventToActorToRequestMap.Map))
 		rw.Write([]byte("\n"))
 	})
 
@@ -183,13 +145,13 @@ func main() {
 
 		readyChan := make(chan []byte)
 		eventRequestChan <- EventActorMessage{
-			RID:           rid,
-			Event:         event,
-			Actor:         actor,
-			OutValueReady: readyChan,
-			InValue:       value,
-			CreatedAt:     time.Now(),
-			Context:       r.Context(),
+			RID:       rid,
+			Event:     event,
+			Actor:     actor,
+			OutChan:   readyChan,
+			InValue:   value,
+			CreatedAt: time.Now(),
+			Context:   r.Context(),
 		}
 
 		select {
@@ -204,7 +166,43 @@ func main() {
 	check(err)
 }
 
+func cleanMap(eventToActorToRequestMap EventToActorToRequestMap, toBeCleanedRID string) {
+	eventToActorToRequestMap.mu.Lock()
+	defer eventToActorToRequestMap.mu.Unlock()
+
+	for _, actorToRequestMap := range eventToActorToRequestMap.Map {
+		for actorName, pendingRequests := range actorToRequestMap {
+			for rid, eventReq := range pendingRequests {
+				if rid == toBeCleanedRID {
+					delete(pendingRequests, rid)
+					if len(pendingRequests) == 0 {
+						delete(actorToRequestMap, actorName)
+					}
+					if len(actorToRequestMap) == 0 {
+						delete(eventToActorToRequestMap.Map, eventReq.Event)
+					}
+					return
+				}
+			}
+		}
+	}
+
+}
+
 var letterRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+func newLog(eventReq EventActorMessage, msg string, pendingCounter int32) string {
+	return string(mustMarshalJson(LogEvent{
+		RID:     eventReq.RID,
+		Actor:   eventReq.Actor,
+		Event:   eventReq.Event,
+		Pending: pendingCounter,
+		Msg:     msg,
+		Time:    time.Now(),
+		Value:   eventReq.InValue,
+		Age:     time.Since(eventReq.CreatedAt).Seconds(),
+	}))
+}
 
 func RandStringRunes(n int) string {
 	b := make([]rune, n)
@@ -218,4 +216,10 @@ func check(err error) {
 	if err != nil {
 		panic(err)
 	}
+}
+
+func mustMarshalJson(v interface{}) []byte {
+	byts, err := json.Marshal(v)
+	check(err)
+	return byts
 }
