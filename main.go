@@ -11,6 +11,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"k8s.io/apimachinery/pkg/labels"
 )
 
 type LogEvent struct {
@@ -33,6 +35,8 @@ type EventActorMessage struct {
 	OutChan    chan OutValue   `json:"-"`
 	Context    context.Context `json:"-"`
 	MatchChan  chan string     `json:"-"`
+	Selector   labels.Selector `json:"-"`
+	Labels     labels.Set      `json:"labels"`
 	MateWanted int             `json:"mate_wanted"`
 	InValue    string          `json:"in_value"`
 	CreatedAt  time.Time       `json:"created_at"`
@@ -97,12 +101,13 @@ func main() {
 				defer eventToActorToRequestMap.mu.RUnlock()
 
 				if actorToRequestMap, ok := eventToActorToRequestMap.Map[eventReq.Event]; ok {
-					for actorName, actorPendingReqs := range actorToRequestMap {
-						if actorName == eventReq.Actor {
-							continue
-						}
+					for _, actorPendingReqs := range actorToRequestMap {
 
 						for _, pendingReq := range actorPendingReqs {
+							if !eventReq.Selector.Matches(pendingReq.Labels) {
+								continue
+							}
+
 							select {
 							case <-pendingReq.Context.Done():
 								continue
@@ -186,7 +191,19 @@ func main() {
 		event := r.URL.Query().Get("event")
 		actor := r.URL.Query().Get("actor")
 		value := r.URL.Query().Get("value")
+
 		mateCount := 1
+		selector := fmt.Sprintf("actor != %s", actor)
+
+		if r.URL.Query().Get("selector") != "" {
+			selector = r.URL.Query().Get("selector")
+		}
+
+		lq, err := labels.Parse(selector)
+		if err != nil {
+			rw.Write([]byte(fmt.Sprintf("bad selector: %v\n", err)))
+			return
+		}
 
 		if r.URL.Query().Get("mates") != "" {
 			var err error
@@ -208,6 +225,8 @@ func main() {
 			Context:    r.Context(),
 			MatchChan:  make(chan string),
 			MateWanted: mateCount,
+			Selector:   lq,
+			Labels:     labels.Set{"actor": actor},
 		}
 
 		select {
