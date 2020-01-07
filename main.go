@@ -7,28 +7,34 @@ import (
 	"math/rand"
 	"net/http"
 	"sync/atomic"
+	"time"
 )
 
 type LogEvent struct {
-	RID     string   `json:"rid"`
-	Event   string   `json:"event"`
-	Who     []string `json:"who"`
-	Pending int32    `json:"pending"`
-	Msg     string   `json:"msg"`
+	Time    time.Time `json:"time"`
+	RID     string    `json:"rid"`
+	Msg     string    `json:"msg"`
+	Event   string    `json:"event"`
+	Actor   string    `json:"actor"`
+	Value   string    `json:"value"`
+	Pending int32     `json:"pending"`
+	Age     float64   `json:"age"`
 }
 
-func LogEventString(e LogEvent) string {
-	byts, err := json.Marshal(e)
+func mustMarshalJson(v interface{}) []byte {
+	byts, err := json.Marshal(v)
 	check(err)
-	return string(byts)
+	return byts
 }
 
 type EventActorMessage struct {
-	RID        string          `json:"-"`
-	Event      string          `json:"-"`
-	Actor      string          `json:"-"`
-	ReadyValue chan string     `json:"-"`
-	Context    context.Context `json:"-"`
+	RID           string          `json:"-"`
+	Event         string          `json:"-"`
+	Actor         string          `json:"-"`
+	OutValueReady chan []byte     `json:"-"`
+	Context       context.Context `json:"-"`
+	InValue       string          `json:"in_value"`
+	CreatedAt     time.Time       `json:"created_at"`
 }
 
 func main() {
@@ -91,26 +97,32 @@ func main() {
 			eventReq := <-eventRequestChan
 
 			atomic.AddInt32(&pendingCounter, 1)
-			fmt.Println(LogEventString(LogEvent{
+			fmt.Println(string(mustMarshalJson(LogEvent{
 				RID:     eventReq.RID,
-				Who:     []string{eventReq.Actor},
+				Actor:   eventReq.Actor,
 				Event:   eventReq.Event,
 				Pending: atomic.LoadInt32(&pendingCounter),
-				Msg:     "+Waiting",
-			}))
+				Msg:     "+",
+				Time:    time.Now(),
+				Value:   eventReq.InValue,
+				Age:     time.Since(eventReq.CreatedAt).Seconds(),
+			})))
 
 			go func() {
 				<-eventReq.Context.Done()
 				cleanChan <- eventReq.RID
 
 				atomic.AddInt32(&pendingCounter, -1)
-				fmt.Println(LogEventString(LogEvent{
+				fmt.Println(string(mustMarshalJson(LogEvent{
 					RID:     eventReq.RID,
-					Who:     []string{eventReq.Actor},
+					Actor:   eventReq.Actor,
 					Event:   eventReq.Event,
 					Pending: atomic.LoadInt32(&pendingCounter),
-					Msg:     "-Done",
-				}))
+					Msg:     "-",
+					Time:    time.Now(),
+					Value:   eventReq.InValue,
+					Age:     time.Since(eventReq.CreatedAt).Seconds(),
+				})))
 			}()
 
 			if actorToRequestMap, ok := eventToActorToRequestMap[eventReq.Event]; ok {
@@ -120,14 +132,19 @@ func main() {
 					}
 
 					for _, pendingReq := range actorPendingReqs {
+						outValue := map[string]string{}
+						outValue[pendingReq.Actor] = pendingReq.InValue
+						outValue[eventReq.Actor] = eventReq.InValue
+						jsonByts := mustMarshalJson(outValue)
+
 						select {
-						case pendingReq.ReadyValue <- "ready":
+						case pendingReq.OutValueReady <- jsonByts:
 						case <-pendingReq.Context.Done():
 							continue
 						}
 
 						select {
-						case eventReq.ReadyValue <- "ready":
+						case eventReq.OutValueReady <- jsonByts:
 						case <-eventReq.Context.Done():
 							continue REQ_LOOP
 						}
@@ -154,9 +171,7 @@ func main() {
 	}()
 
 	http.HandleFunc("/stats", func(rw http.ResponseWriter, r *http.Request) {
-		byts, err := json.Marshal(eventToActorToRequestMap)
-		check(err)
-		rw.Write(byts)
+		rw.Write(mustMarshalJson(eventToActorToRequestMap))
 		rw.Write([]byte("\n"))
 	})
 
@@ -164,19 +179,23 @@ func main() {
 		rid := RandStringRunes(8)
 		event := r.URL.Query().Get("event")
 		actor := r.URL.Query().Get("actor")
+		value := r.URL.Query().Get("value")
 
-		readyChan := make(chan string)
+		readyChan := make(chan []byte)
 		eventRequestChan <- EventActorMessage{
-			RID:        rid,
-			Event:      event,
-			Actor:      actor,
-			ReadyValue: readyChan,
-			Context:    r.Context(),
+			RID:           rid,
+			Event:         event,
+			Actor:         actor,
+			OutValueReady: readyChan,
+			InValue:       value,
+			CreatedAt:     time.Now(),
+			Context:       r.Context(),
 		}
 
 		select {
-		case value := <-readyChan:
-			rw.Write([]byte(value + "\n"))
+		case out := <-readyChan:
+			rw.Write(out)
+			rw.Write([]byte("\n"))
 		case <-r.Context().Done():
 		}
 	})
