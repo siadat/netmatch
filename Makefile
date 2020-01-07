@@ -1,4 +1,7 @@
 test:
+	go test -count 1 -v -race ./... 
+
+run:
 	goreman -f Procfile start
 
 all:

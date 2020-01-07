@@ -1,4 +1,4 @@
-package main
+package syncnet
 
 import (
 	"context"
@@ -15,54 +15,14 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 )
 
-type LogEvent struct {
-	Time       time.Time `json:"time"`
-	RID        string    `json:"rid"`
-	MatchID    string    `json:"match_id,omitempty"`
-	Msg        string    `json:"msg"`
-	Event      string    `json:"event"`
-	Actor      string    `json:"actor"`
-	MateWanted int       `json:"mate_wanted"`
-	Value      string    `json:"value"`
-	Pending    int32     `json:"pending"`
-	Age        float64   `json:"age"`
-}
-
-type EventActorMessage struct {
-	RID        string          `json:"-"`
-	Event      string          `json:"-"`
-	Actor      string          `json:"-"`
-	OutChan    chan OutValue   `json:"-"`
-	Context    context.Context `json:"-"`
-	MatchChan  chan string     `json:"-"`
-	Selector   labels.Selector `json:"-"`
-	Labels     labels.Set      `json:"labels"`
-	MateWanted int             `json:"mate_wanted"`
-	InValue    string          `json:"in_value"`
-	CreatedAt  time.Time       `json:"created_at"`
-}
-
-type OutValue struct {
-	Values map[string]string
-}
-
-type EventToActorToRequestMap struct {
-	Map map[string]map[string]map[string]EventActorMessage
-	mu  *sync.RWMutex
-}
-
-func main() {
-	var addr = ":8080"
-	fmt.Printf("Listening on %s\n", addr)
-
+func NewHandler() http.Handler {
 	var pendingCounter int32
+	cleanChan := make(chan string)
 	eventRequestChan := make(chan EventActorMessage)
 	eventToActorToRequestMap := EventToActorToRequestMap{
 		Map: make(map[string]map[string]map[string]EventActorMessage),
 		mu:  &sync.RWMutex{},
 	}
-
-	cleanChan := make(chan string)
 
 	go func() {
 		for {
@@ -104,7 +64,7 @@ func main() {
 					for _, actorPendingReqs := range actorToRequestMap {
 
 						for _, pendingReq := range actorPendingReqs {
-							if !eventReq.Selector.Matches(pendingReq.Labels) {
+							if !eventReq.Selector.Matches(pendingReq.Labels) || !pendingReq.Selector.Matches(eventReq.Labels) {
 								continue
 							}
 
@@ -178,7 +138,8 @@ func main() {
 		}
 	}()
 
-	http.HandleFunc("/stats", func(rw http.ResponseWriter, r *http.Request) {
+	serveMux := http.NewServeMux()
+	serveMux.HandleFunc("/stats", func(rw http.ResponseWriter, r *http.Request) {
 		eventToActorToRequestMap.mu.RLock()
 		defer eventToActorToRequestMap.mu.RUnlock()
 
@@ -186,7 +147,7 @@ func main() {
 		rw.Write([]byte("\n"))
 	})
 
-	http.HandleFunc("/event", func(rw http.ResponseWriter, r *http.Request) {
+	serveMux.HandleFunc("/event", func(rw http.ResponseWriter, r *http.Request) {
 		rid := RandStringRunes(8)
 		event := r.URL.Query().Get("event")
 		actor := r.URL.Query().Get("actor")
@@ -236,9 +197,44 @@ func main() {
 		case <-r.Context().Done():
 		}
 	})
+	return serveMux
+}
 
-	err := http.ListenAndServe(addr, nil)
-	check(err)
+type LogEvent struct {
+	Time       time.Time `json:"time"`
+	RID        string    `json:"rid"`
+	MatchID    string    `json:"match_id,omitempty"`
+	Msg        string    `json:"msg"`
+	Event      string    `json:"event"`
+	Actor      string    `json:"actor"`
+	Selector   string    `json:"selector"`
+	MateWanted int       `json:"mate_wanted"`
+	Value      string    `json:"value"`
+	Pending    int32     `json:"pending"`
+	Age        float64   `json:"age"`
+}
+
+type EventActorMessage struct {
+	RID        string          `json:"-"`
+	Event      string          `json:"-"`
+	Actor      string          `json:"-"`
+	OutChan    chan OutValue   `json:"-"`
+	Context    context.Context `json:"-"`
+	MatchChan  chan string     `json:"-"`
+	Selector   labels.Selector `json:"-"`
+	Labels     labels.Set      `json:"labels"`
+	MateWanted int             `json:"mate_wanted"`
+	InValue    string          `json:"in_value"`
+	CreatedAt  time.Time       `json:"created_at"`
+}
+
+type OutValue struct {
+	Values map[string]string `json:"values"`
+}
+
+type EventToActorToRequestMap struct {
+	Map map[string]map[string]map[string]EventActorMessage
+	mu  *sync.RWMutex
 }
 
 func cleanMap(eventToActorToRequestMap EventToActorToRequestMap, toBeCleanedRID string) {
@@ -270,6 +266,7 @@ func newLog(eventReq EventActorMessage, msg string, pendingCounter int32, matchI
 	return string(mustMarshalJson(LogEvent{
 		RID:        eventReq.RID,
 		Actor:      eventReq.Actor,
+		Selector:   eventReq.Selector.String(),
 		Event:      eventReq.Event,
 		MateWanted: eventReq.MateWanted,
 		MatchID:    matchID,
