@@ -1,6 +1,7 @@
 package syncnet
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -45,23 +46,36 @@ type EventToActorToRequestMap struct {
 }
 
 type LogEvent struct {
-	Time       time.Time  `json:"time"`
+	Time       time.Time  `json:"time,omitempty"`
 	RID        string     `json:"rid"`
 	MatchID    string     `json:"match_id,omitempty"`
 	Msg        string     `json:"msg"`
 	Event      string     `json:"event"`
 	Actor      string     `json:"actor"`
-	Selector   string     `json:"selector"`
-	Labels     labels.Set `json:"labels"`
+	Selector   string     `json:"selector,omitempty"`
+	Labels     labels.Set `json:"labels,omitempty"`
 	MateWanted int        `json:"mate_wanted"`
 	Payload    string     `json:"payload"`
 	Pending    int32      `json:"pending"`
 	Age        float64    `json:"age"`
 }
 
+type graphLineStruct struct {
+	rid      string
+	str      string
+	occupied bool
+}
+
 type Syncnet struct {
-	terminateChan            chan struct{}
-	terminateWG              sync.WaitGroup
+	LogFormat string
+
+	terminateChan chan struct{}
+	terminateWG   sync.WaitGroup
+
+	graphline   []graphLineStruct
+	graphlineMu *sync.Mutex
+
+	pendingCounter           int32
 	eventRequestChan         chan EventActorMessage
 	eventToActorToRequestMap EventToActorToRequestMap
 }
@@ -77,8 +91,11 @@ func (sn *Syncnet) Close() {
 func NewSyncnet() *Syncnet {
 	sn := Syncnet{}
 
-	var pendingCounter int32
 	cleanChan := make(chan string)
+
+	sn.LogFormat = "graph"
+	sn.graphlineMu = &sync.Mutex{}
+
 	sn.terminateChan = make(chan struct{})
 	sn.terminateWG = sync.WaitGroup{}
 	sn.eventRequestChan = make(chan EventActorMessage)
@@ -111,11 +128,19 @@ func NewSyncnet() *Syncnet {
 			case eventReq = <-sn.eventRequestChan:
 			}
 
-			atomic.AddInt32(&pendingCounter, 1)
+			atomic.AddInt32(&sn.pendingCounter, 1)
+			fmt.Println(sn.newLog([]EventActorMessage{eventReq}, "+", ""))
 			sn.terminateWG.Add(1)
 			go func(eventReq EventActorMessage) {
-				defer sn.terminateWG.Done()
+
 				matchID := ""
+				defer func() {
+					atomic.AddInt32(&sn.pendingCounter, -1)
+					if !(sn.LogFormat == "graph" && matchID != "") {
+						fmt.Println(sn.newLog([]EventActorMessage{eventReq}, "-", matchID))
+					}
+					sn.terminateWG.Done()
+				}()
 
 				select {
 				case <-sn.terminateChan:
@@ -136,13 +161,6 @@ func NewSyncnet() *Syncnet {
 					// and we want to proceed only when the
 					// request is done.
 				}
-
-				// not using defer, because I want to set
-				// pendingCounter before printing the log
-				// and matchID is unknown initially. I could
-				// define an anonymous func but this is cleaner.
-				atomic.AddInt32(&pendingCounter, -1)
-				fmt.Println(newLog(eventReq, "-", atomic.LoadInt32(&pendingCounter), matchID))
 			}(eventReq)
 
 			requests, ok := func(eventReq EventActorMessage) ([]EventActorMessage, bool) {
@@ -193,9 +211,13 @@ func NewSyncnet() *Syncnet {
 					outValue.Payloads[req.Params.Actor] = req.Params.Payload
 					rids = append(rids, req.RID)
 				}
+
+				matchID := strings.Join(rids, "+")
+				fmt.Println(sn.newLog(requests, "m", matchID))
+
 				for _, req := range requests {
 					select {
-					case req.MatchChan <- strings.Join(rids, "+"):
+					case req.MatchChan <- matchID:
 					case <-req.Params.Context.Done():
 					}
 
@@ -241,6 +263,111 @@ func NewSyncnet() *Syncnet {
 	}()
 
 	return &sn
+}
+
+func (sn *Syncnet) newLog(eventReqs []EventActorMessage, msg string, matchID string) string {
+	switch sn.LogFormat {
+	case "json":
+		for _, eventReq := range eventReqs {
+			return string(mustMarshalJson(LogEvent{
+				RID:        eventReq.RID,
+				Actor:      eventReq.Params.Actor,
+				Selector:   eventReq.Selector.String(),
+				Labels:     eventReq.Labels,
+				Event:      eventReq.Params.Event,
+				MateWanted: eventReq.Params.MateWanted,
+				MatchID:    matchID,
+				Pending:    atomic.LoadInt32(&sn.pendingCounter),
+				Msg:        msg,
+				Time:       time.Now(),
+				Payload:    eventReq.Params.Payload,
+				Age:        time.Since(eventReq.CreatedAt).Seconds(),
+			}))
+		}
+	case "graph":
+		sn.graphlineMu.Lock()
+		defer sn.graphlineMu.Unlock()
+
+		LINE_STR := "│"
+		START_STR := "┌"
+		END_STR := "└"
+		CANCEL_STR := "┴"
+
+		for i := range sn.graphline {
+			if sn.graphline[i].occupied {
+				sn.graphline[i].str = LINE_STR
+			} else {
+				sn.graphline[i].str = " "
+			}
+		}
+
+		switch msg {
+		case "+":
+			for _, eventReq := range eventReqs {
+				vacantFound := false
+				for i := range sn.graphline {
+					if !sn.graphline[i].occupied {
+						sn.graphline[i].rid = eventReq.RID
+						sn.graphline[i].str = START_STR
+						sn.graphline[i].occupied = true
+						vacantFound = true
+						break
+					}
+				}
+				if !vacantFound {
+					sn.graphline = append(sn.graphline, graphLineStruct{
+						rid:      eventReq.RID,
+						str:      START_STR,
+						occupied: true,
+					})
+				}
+			}
+		case "-", "m":
+			var chr string
+			if msg == "-" {
+				chr = CANCEL_STR
+			} else {
+				chr = END_STR
+			}
+			for _, eventReq := range eventReqs {
+				for i := range sn.graphline {
+					if eventReq.RID == sn.graphline[i].rid {
+						sn.graphline[i].rid = eventReq.RID
+						sn.graphline[i].str = chr
+						sn.graphline[i].occupied = false
+						break
+					}
+				}
+			}
+		}
+
+		buf := bytes.NewBufferString("")
+
+		for _, gl := range sn.graphline {
+			buf.WriteString(fmt.Sprintf("%s", gl.str))
+		}
+
+		for _, eventReq := range eventReqs {
+			buf.WriteString(fmt.Sprintf(" [e=%s a=%s]", eventReq.Params.Event, eventReq.Params.Actor))
+		}
+
+		for {
+			if len(sn.graphline) == 0 {
+				break
+			}
+
+			if sn.graphline[len(sn.graphline)-1].occupied == false {
+				// if it is the last item, shrink the slice
+				sn.graphline = sn.graphline[:len(sn.graphline)-1]
+			} else {
+				break
+			}
+		}
+
+		return buf.String()
+	}
+
+	return fmt.Sprintf("unknown format %q", sn.LogFormat)
 }
 
 func (sn *Syncnet) Send(params Params) (chan OutValue, error) {
@@ -374,27 +501,9 @@ func cleanMap(eventToActorToRequestMap EventToActorToRequestMap, toBeCleanedRID 
 			}
 		}
 	}
-
 }
 
 var letterRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
-
-func newLog(eventReq EventActorMessage, msg string, pendingCounter int32, matchID string) string {
-	return string(mustMarshalJson(LogEvent{
-		RID:        eventReq.RID,
-		Actor:      eventReq.Params.Actor,
-		Selector:   eventReq.Selector.String(),
-		Labels:     eventReq.Labels,
-		Event:      eventReq.Params.Event,
-		MateWanted: eventReq.Params.MateWanted,
-		MatchID:    matchID,
-		Pending:    pendingCounter,
-		Msg:        msg,
-		Time:       time.Now(),
-		Payload:    eventReq.Params.Payload,
-		Age:        time.Since(eventReq.CreatedAt).Seconds(),
-	}))
-}
 
 func RandStringRunes(n int) string {
 	b := make([]rune, n)

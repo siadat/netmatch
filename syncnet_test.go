@@ -26,7 +26,7 @@ func paramsToURL(p syncnet.Params) string {
 }
 
 func TestBasic(t *testing.T) {
-	t.Parallel()
+	// t.Parallel()
 
 	requests := []syncnet.Params{
 		{
@@ -64,7 +64,7 @@ func TestBasic(t *testing.T) {
 }
 
 func TestBasicTriplet(t *testing.T) {
-	t.Parallel()
+	// t.Parallel()
 
 	ctx, _ := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	requests := []syncnet.Params{
@@ -118,7 +118,7 @@ func TestBasicTriplet(t *testing.T) {
 }
 
 func TestHttpBasic(t *testing.T) {
-	t.Parallel()
+	// t.Parallel()
 
 	sn := syncnet.NewSyncnet()
 	defer sn.Close()
@@ -168,7 +168,7 @@ func TestHttpBasic(t *testing.T) {
 }
 
 func TestHttpMustBlock(t *testing.T) {
-	t.Parallel()
+	// t.Parallel()
 
 	sn := syncnet.NewSyncnet()
 	defer sn.Close()
@@ -211,7 +211,7 @@ func TestHttpMustBlock(t *testing.T) {
 }
 
 func TestHttpMustBlockBecauseOfSelector(t *testing.T) {
-	t.Parallel()
+	// t.Parallel()
 
 	sn := syncnet.NewSyncnet()
 	defer sn.Close()
