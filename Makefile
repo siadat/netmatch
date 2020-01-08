@@ -1,5 +1,5 @@
 test:
-	go test -count 1 -race ./... 
+	go test -count 1 -v -race ./...
 
 serve:
 	go run cmd/syncnet/main.go

@@ -60,8 +60,18 @@ type LogEvent struct {
 }
 
 type Syncnet struct {
+	terminateChan            chan struct{}
+	terminateWG              sync.WaitGroup
 	eventRequestChan         chan EventActorMessage
 	eventToActorToRequestMap EventToActorToRequestMap
+}
+
+// Close tears down internal goroutines to free up resources. It
+// blocks until all internal goroutines are stopped, which should
+// happen immediately.
+func (sn *Syncnet) Close() {
+	close(sn.terminateChan)
+	sn.terminateWG.Wait()
 }
 
 func NewSyncnet() *Syncnet {
@@ -69,34 +79,68 @@ func NewSyncnet() *Syncnet {
 
 	var pendingCounter int32
 	cleanChan := make(chan string)
+	sn.terminateChan = make(chan struct{})
+	sn.terminateWG = sync.WaitGroup{}
 	sn.eventRequestChan = make(chan EventActorMessage)
 	sn.eventToActorToRequestMap = EventToActorToRequestMap{
 		Map: make(map[string]map[string]map[string]EventActorMessage),
 		mu:  &sync.RWMutex{},
 	}
 
+	sn.terminateWG.Add(1)
 	go func() {
+		defer sn.terminateWG.Done()
 		for {
-			completedRID := <-cleanChan
-			cleanMap(sn.eventToActorToRequestMap, completedRID)
+			select {
+			case <-sn.terminateChan:
+				return
+			case completedRID := <-cleanChan:
+				cleanMap(sn.eventToActorToRequestMap, completedRID)
+			}
 		}
 	}()
 
+	sn.terminateWG.Add(1)
 	go func() {
-		for eventReq := range sn.eventRequestChan {
-			atomic.AddInt32(&pendingCounter, 1)
-			fmt.Println(newLog(eventReq, "+", atomic.LoadInt32(&pendingCounter), ""))
+		defer sn.terminateWG.Done()
+		for {
+			var eventReq EventActorMessage
+			select {
+			case <-sn.terminateChan:
+				return
+			case eventReq = <-sn.eventRequestChan:
+			}
 
+			atomic.AddInt32(&pendingCounter, 1)
+			sn.terminateWG.Add(1)
 			go func(eventReq EventActorMessage) {
+				defer sn.terminateWG.Done()
 				matchID := ""
 
 				select {
+				case <-sn.terminateChan:
+					return
 				case matchID = <-eventReq.MatchChan:
 				case <-eventReq.Params.Context.Done():
 				}
 
-				<-eventReq.Params.Context.Done()
+				select {
+				case <-sn.terminateChan:
+					return
+				case <-eventReq.Params.Context.Done():
+					// checking context again, even though
+					// we already had it in the previous
+					// select{} statement, because we could
+					// be here because MatchChan was ready,
+					// and not because the request is done.
+					// and we want to proceed only when the
+					// request is done.
+				}
 
+				// not using defer, because I want to set
+				// pendingCounter before printing the log
+				// and matchID is unknown initially. I could
+				// define an anonymous func but this is cleaner.
 				atomic.AddInt32(&pendingCounter, -1)
 				fmt.Println(newLog(eventReq, "-", atomic.LoadInt32(&pendingCounter), matchID))
 			}(eventReq)
@@ -180,9 +224,16 @@ func NewSyncnet() *Syncnet {
 				}
 				sn.eventToActorToRequestMap.Map[eventReq.Params.Event][eventReq.Params.Actor][eventReq.RID] = eventReq
 
+				sn.terminateWG.Add(1)
 				go func(eventReq EventActorMessage) {
-					<-eventReq.Params.Context.Done()
-					cleanChan <- eventReq.RID
+					defer sn.terminateWG.Done()
+
+					select {
+					case <-sn.terminateChan:
+						return
+					case <-eventReq.Params.Context.Done():
+						cleanChan <- eventReq.RID
+					}
 				}(eventReq)
 			}()
 

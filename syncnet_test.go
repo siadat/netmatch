@@ -26,6 +26,8 @@ func paramsToURL(p syncnet.Params) string {
 }
 
 func TestBasic(t *testing.T) {
+	t.Parallel()
+
 	requests := []syncnet.Params{
 		{
 			Event:   "e",
@@ -40,6 +42,8 @@ func TestBasic(t *testing.T) {
 	}
 
 	sn := syncnet.NewSyncnet()
+	defer sn.Close()
+
 	wg := sync.WaitGroup{}
 	for _, p := range requests {
 		wg.Add(1)
@@ -60,6 +64,8 @@ func TestBasic(t *testing.T) {
 }
 
 func TestBasicTriplet(t *testing.T) {
+	t.Parallel()
+
 	ctx, _ := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	requests := []syncnet.Params{
 		{
@@ -86,6 +92,8 @@ func TestBasicTriplet(t *testing.T) {
 	}
 
 	sn := syncnet.NewSyncnet()
+	defer sn.Close()
+
 	wg := sync.WaitGroup{}
 	for _, p := range requests {
 		wg.Add(1)
@@ -110,7 +118,12 @@ func TestBasicTriplet(t *testing.T) {
 }
 
 func TestHttpBasic(t *testing.T) {
-	ts := httptest.NewServer(syncnet.NewSyncnet().NewHandler())
+	t.Parallel()
+
+	sn := syncnet.NewSyncnet()
+	defer sn.Close()
+
+	ts := httptest.NewServer(sn.NewHandler())
 	defer ts.Close()
 
 	requests := []syncnet.Params{
@@ -155,7 +168,12 @@ func TestHttpBasic(t *testing.T) {
 }
 
 func TestHttpMustBlock(t *testing.T) {
-	ts := httptest.NewServer(syncnet.NewSyncnet().NewHandler())
+	t.Parallel()
+
+	sn := syncnet.NewSyncnet()
+	defer sn.Close()
+
+	ts := httptest.NewServer(sn.NewHandler())
 	defer ts.Close()
 
 	requests := []syncnet.Params{
@@ -193,7 +211,12 @@ func TestHttpMustBlock(t *testing.T) {
 }
 
 func TestHttpMustBlockBecauseOfSelector(t *testing.T) {
-	ts := httptest.NewServer(syncnet.NewSyncnet().NewHandler())
+	t.Parallel()
+
+	sn := syncnet.NewSyncnet()
+	defer sn.Close()
+
+	ts := httptest.NewServer(sn.NewHandler())
 	defer ts.Close()
 
 	requests := []syncnet.Params{
