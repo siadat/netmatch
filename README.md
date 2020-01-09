@@ -1,21 +1,24 @@
 # Netsync
+
 [![GoDoc](https://godoc.org/github.com/siadat/netsync?status.svg)][godoc]
 [![Build Status](https://travis-ci.org/siadat/netsync.svg?branch=master)][travis]
-
-Netsync is a synchronized messaging system.
-It is a tool for synchronoizing processes over network via HTTP requests.
-It also provides a Go API ([Go docs][godoc]) which could be used to synchronize Go routines.
-
-This is an experiment inspired by the ideas in [CSP][csp_homepage] and Go unbuffered channels.
-While this tool does provide features that are not available in other tools (e.g., allowing more than two clients to synchronize)
-most systems are probably better designed with async, buffered message queues.
-
-With that in mind, let the fun begin!
 
 [godoc]:  https://godoc.org/github.com/siadat/netsync
 [travis]: https://travis-ci.org/siadat/netsync
 [csp_homepage]: http://www.usingcsp.com/
 [k8s_labels_and_selectors]: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+
+Netsync is a synchronized messaging system.
+It is a tool for synchronoizing processes over network via HTTP requests.
+It also provides a Go API ([Go docs][godoc]) which could be used to synchronize Go routines.
+
+## What does it do?
+
+One process sends an HTTP request, and it is blocked until N
+other matching processes send N other request with the same "event" query value.
+The requests might have a *payload* value, which is shared with all requests in
+the responses they eventually receive upon syncing.
+Matching of requests can be limited using *labels* and *selectors*.
 
 ## Quick start: sync 2 processes
 
@@ -58,7 +61,7 @@ curl "http://localhost:8000/event?event=e&payload=v2&actor=a2&mates=2" &
 curl "http://localhost:8000/event?event=e&payload=v3&actor=a3&mates=2" &
 ```
 
-## What does it do?
+## Detailed example
 
 Suppose we have two programs running concurrently,
 and these processes are required to synchronize on a event EVENT before proceeding.
@@ -220,3 +223,12 @@ if err != nil {
 
 output := <-doneChan
 ```
+
+## Background
+
+This tool is inspired by the ideas in [CSP][csp_homepage] and Go unbuffered channels.
+While it does provide features that are not available in other tools (e.g., allowing more than two clients to synchronize)
+traditional services are probably better off with async, buffered message queues.
+However, Netsync provides synchronization it the cases where it is required.
+Feel free to let me know how you use Netsync in your project.
+PRs (with tests) and issues are all welcome.
