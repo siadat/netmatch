@@ -19,7 +19,7 @@ With that in mind, let the fun begin!
 ## Quick start
 
     go install github.com/siadat/syncnet/cmd/syncnet
-    syncnet
+    syncnet :8000
 
 ## What does it do?
 
@@ -67,15 +67,15 @@ VM and CUST must synchronize on `coin` and `choc` events.
 Using Syncnet, we can write the processes in Bash, e.g. the code for VM might look like this:
 
 ```bash
-curl "http://localhost:8080/event?actor=VM&mates=1&event=coin" # VM's 1st request
-curl "http://localhost:8080/event?actor=VM&mates=1&event=choc" # VM's 2nd request
+curl "http://localhost:8000/event?actor=VM&mates=1&event=coin" # VM's 1st request
+curl "http://localhost:8000/event?actor=VM&mates=1&event=choc" # VM's 2nd request
 ```
 
 And the code for CUST could look like this:
 
 ```bash
-curl "http://localhost:8080/event?actor=CUST&mates=1&event=coin" # CUST's 1st request
-curl "http://localhost:8080/event?actor=CUST&mates=1&event=choc" # CUST's 2nd request
+curl "http://localhost:8000/event?actor=CUST&mates=1&event=coin" # CUST's 1st request
+curl "http://localhost:8000/event?actor=CUST&mates=1&event=choc" # CUST's 2nd request
 ```
 
 When run concurrently, the log of Syncnet will look like this:
@@ -106,7 +106,7 @@ This endpoint can be used to monitor the current pending/blocking requests waiti
 
 An example of a request with all options set:
 
-    curl "http://localhost:8080/event?actor=CUST&mates=1&event=choc&labels=actor%3DCUST&selector=actor!%3DCUST"
+    curl "http://localhost:8000/event?actor=CUST&mates=1&event=choc&labels=actor%3DCUST&selector=actor!%3DCUST"
                                       ^          ^       ^          ^                   ^
                                       |          |       |          |                   |
                                       actor=CUST |       |          |                   |

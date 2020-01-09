@@ -1,4 +1,4 @@
-test:
+test: dependencies
 	go test -count 1 -v -race ./...
 
 serve:
@@ -6,6 +6,9 @@ serve:
 
 test_python:
 	goreman -f Procfile start
+
+dependencies:
+	go get -v ./...
 
 all:
 	go run main.go
