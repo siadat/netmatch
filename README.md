@@ -9,8 +9,10 @@
 [k8s_labels_and_selectors]: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
 
 Netsync is a synchronized messaging system.
-It is a tool for synchronoizing processes over network via HTTP requests.
+It is a low-level tool for synchronoizing processes over network via HTTP requests.
 It also provides a Go API ([Go docs][godoc]) which could be used to synchronize Go routines.
+
+It may be used for matching online players (and an optional game maker) in an online multiplayer game server.
 
 ## What does it do?
 
@@ -58,14 +60,21 @@ Note that these two requests matched and synced together because the following c
 - :white_check_mark: **selector 2 and label 1 match**: 2nd request's selector (default: `actor != actor2`) matches 1st request's label (default: `actor = actor1`).
 - :white_check_mark: **number of mates**: Each request is asking for 1 other request to sync (because the default value of `mates` is 1) and there are already 2 requests.
 
-## Example: sync 3 processes
+## Example: match 2 players
 
 With `mates=2` the request is blocked until 2 other requests are made.
 
 ```bash
-curl "http://localhost:8000/event?event=e&payload=v1&actor=a1&mates=2" &
-curl "http://localhost:8000/event?event=e&payload=v2&actor=a2&mates=2" &
-curl "http://localhost:8000/event?event=e&payload=v3&actor=a3&mates=2" &
+curl "http://localhost:8000/event?event=newGame&payload=v1&actor=player1" &
+curl "http://localhost:8000/event?event=newGame&payload=v2&actor=player2" &
+```
+
+## Example: match 2 players and 1 game maker
+
+```bash
+curl "http://localhost:8000/event?event=joinGame&payload=gameid=12345&actor=gameMaker&mates=2" &
+curl "http://localhost:8000/event?event=joinGame&actor=player1&mates=2" &
+curl "http://localhost:8000/event?event=joinGame&actor=player2&mates=2" &
 ```
 
 ## Detailed example
