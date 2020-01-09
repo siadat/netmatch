@@ -1,4 +1,4 @@
-package syncnet
+package netsync
 
 import (
 	"bytes"
@@ -79,7 +79,7 @@ type graphLineStruct struct {
 	occupied bool
 }
 
-type Syncnet struct {
+type Netsync struct {
 	LogFormat string
 
 	terminateChan chan struct{}
@@ -96,74 +96,74 @@ type Syncnet struct {
 // Close tears down internal goroutines to free up resources. It
 // blocks until all internal goroutines are stopped, which should
 // happen immediately.
-func (sn *Syncnet) Close() {
-	close(sn.terminateChan)
-	sn.terminateWG.Wait()
+func (ns *Netsync) Close() {
+	close(ns.terminateChan)
+	ns.terminateWG.Wait()
 }
 
-func NewSyncnet() *Syncnet {
-	sn := Syncnet{}
+func NewNetsync() *Netsync {
+	ns := Netsync{}
 
 	cleanChan := make(chan string)
 
-	sn.LogFormat = "graph"
-	sn.graphlineMu = &sync.Mutex{}
+	ns.LogFormat = "graph"
+	ns.graphlineMu = &sync.Mutex{}
 
-	sn.terminateChan = make(chan struct{})
-	sn.terminateWG = sync.WaitGroup{}
-	sn.eventRequestChan = make(chan eventActorMsgStruct)
-	sn.eventToActorToRequestMap = eventToActorToReqStruct{
+	ns.terminateChan = make(chan struct{})
+	ns.terminateWG = sync.WaitGroup{}
+	ns.eventRequestChan = make(chan eventActorMsgStruct)
+	ns.eventToActorToRequestMap = eventToActorToReqStruct{
 		Map: make(map[string]map[string]map[string]eventActorMsgStruct),
 		mu:  &sync.RWMutex{},
 	}
 
-	sn.terminateWG.Add(1)
+	ns.terminateWG.Add(1)
 	go func() {
-		defer sn.terminateWG.Done()
+		defer ns.terminateWG.Done()
 		for {
 			select {
-			case <-sn.terminateChan:
+			case <-ns.terminateChan:
 				return
 			case completedRID := <-cleanChan:
-				cleanMap(sn.eventToActorToRequestMap, completedRID)
+				cleanMap(ns.eventToActorToRequestMap, completedRID)
 			}
 		}
 	}()
 
-	sn.terminateWG.Add(1)
+	ns.terminateWG.Add(1)
 	go func() {
-		defer sn.terminateWG.Done()
+		defer ns.terminateWG.Done()
 		for {
 			var eventReq eventActorMsgStruct
 			select {
-			case <-sn.terminateChan:
+			case <-ns.terminateChan:
 				return
-			case eventReq = <-sn.eventRequestChan:
+			case eventReq = <-ns.eventRequestChan:
 			}
 
-			atomic.AddInt32(&sn.pendingCounter, 1)
-			fmt.Println(sn.newLog([]eventActorMsgStruct{eventReq}, "+", ""))
-			sn.terminateWG.Add(1)
+			atomic.AddInt32(&ns.pendingCounter, 1)
+			fmt.Println(ns.newLog([]eventActorMsgStruct{eventReq}, "+", ""))
+			ns.terminateWG.Add(1)
 			go func(eventReq eventActorMsgStruct) {
 
 				matchID := ""
 				defer func() {
-					atomic.AddInt32(&sn.pendingCounter, -1)
-					if !(sn.LogFormat == "graph" && matchID != "") {
-						fmt.Println(sn.newLog([]eventActorMsgStruct{eventReq}, "-", matchID))
+					atomic.AddInt32(&ns.pendingCounter, -1)
+					if !(ns.LogFormat == "graph" && matchID != "") {
+						fmt.Println(ns.newLog([]eventActorMsgStruct{eventReq}, "-", matchID))
 					}
-					sn.terminateWG.Done()
+					ns.terminateWG.Done()
 				}()
 
 				select {
-				case <-sn.terminateChan:
+				case <-ns.terminateChan:
 					return
 				case matchID = <-eventReq.MatchChan:
 				case <-eventReq.Params.Context.Done():
 				}
 
 				select {
-				case <-sn.terminateChan:
+				case <-ns.terminateChan:
 					return
 				case <-eventReq.Params.Context.Done():
 					// checking context again, even though
@@ -183,10 +183,10 @@ func NewSyncnet() *Syncnet {
 				}
 
 				maxMateCount := eventReq.Params.Mates
-				sn.eventToActorToRequestMap.mu.RLock()
-				defer sn.eventToActorToRequestMap.mu.RUnlock()
+				ns.eventToActorToRequestMap.mu.RLock()
+				defer ns.eventToActorToRequestMap.mu.RUnlock()
 
-				if actorToRequestMap, ok := sn.eventToActorToRequestMap.Map[eventReq.Params.Event]; ok {
+				if actorToRequestMap, ok := ns.eventToActorToRequestMap.Map[eventReq.Params.Event]; ok {
 					for _, actorPendingReqs := range actorToRequestMap {
 
 						for _, pendingReq := range actorPendingReqs {
@@ -226,7 +226,7 @@ func NewSyncnet() *Syncnet {
 				}
 
 				matchID := strings.Join(rids, "+")
-				fmt.Println(sn.newLog(requests, "m", matchID))
+				fmt.Println(ns.newLog(requests, "m", matchID))
 
 				for _, req := range requests {
 					select {
@@ -244,27 +244,27 @@ func NewSyncnet() *Syncnet {
 			}
 
 			// if we are here, it means no other actor was
-			// listening, or sn.eventToActorToRequestMap has not
+			// listening, or ns.eventToActorToRequestMap has not
 			// cleaned up cancelled or done requests yet.
 
 			func() {
-				sn.eventToActorToRequestMap.mu.Lock()
-				defer sn.eventToActorToRequestMap.mu.Unlock()
+				ns.eventToActorToRequestMap.mu.Lock()
+				defer ns.eventToActorToRequestMap.mu.Unlock()
 
-				if _, ok := sn.eventToActorToRequestMap.Map[eventReq.Params.Event]; !ok {
-					sn.eventToActorToRequestMap.Map[eventReq.Params.Event] = map[string]map[string]eventActorMsgStruct{}
+				if _, ok := ns.eventToActorToRequestMap.Map[eventReq.Params.Event]; !ok {
+					ns.eventToActorToRequestMap.Map[eventReq.Params.Event] = map[string]map[string]eventActorMsgStruct{}
 				}
-				if _, ok := sn.eventToActorToRequestMap.Map[eventReq.Params.Event][eventReq.Params.Actor]; !ok {
-					sn.eventToActorToRequestMap.Map[eventReq.Params.Event][eventReq.Params.Actor] = map[string]eventActorMsgStruct{}
+				if _, ok := ns.eventToActorToRequestMap.Map[eventReq.Params.Event][eventReq.Params.Actor]; !ok {
+					ns.eventToActorToRequestMap.Map[eventReq.Params.Event][eventReq.Params.Actor] = map[string]eventActorMsgStruct{}
 				}
-				sn.eventToActorToRequestMap.Map[eventReq.Params.Event][eventReq.Params.Actor][eventReq.RID] = eventReq
+				ns.eventToActorToRequestMap.Map[eventReq.Params.Event][eventReq.Params.Actor][eventReq.RID] = eventReq
 
-				sn.terminateWG.Add(1)
+				ns.terminateWG.Add(1)
 				go func(eventReq eventActorMsgStruct) {
-					defer sn.terminateWG.Done()
+					defer ns.terminateWG.Done()
 
 					select {
-					case <-sn.terminateChan:
+					case <-ns.terminateChan:
 						return
 					case <-eventReq.Params.Context.Done():
 						cleanChan <- eventReq.RID
@@ -275,11 +275,11 @@ func NewSyncnet() *Syncnet {
 		}
 	}()
 
-	return &sn
+	return &ns
 }
 
-func (sn *Syncnet) newLog(eventReqs []eventActorMsgStruct, msg string, matchID string) string {
-	switch sn.LogFormat {
+func (ns *Netsync) newLog(eventReqs []eventActorMsgStruct, msg string, matchID string) string {
+	switch ns.LogFormat {
 	case "json":
 		for _, eventReq := range eventReqs {
 			return string(mustMarshalJson(logEventStruct{
@@ -290,7 +290,7 @@ func (sn *Syncnet) newLog(eventReqs []eventActorMsgStruct, msg string, matchID s
 				Event:    eventReq.Params.Event,
 				Mates:    eventReq.Params.Mates,
 				MatchID:  matchID,
-				Pending:  atomic.LoadInt32(&sn.pendingCounter),
+				Pending:  atomic.LoadInt32(&ns.pendingCounter),
 				Msg:      msg,
 				Time:     time.Now(),
 				Payload:  eventReq.Params.Payload,
@@ -298,19 +298,19 @@ func (sn *Syncnet) newLog(eventReqs []eventActorMsgStruct, msg string, matchID s
 			}))
 		}
 	case "graph":
-		sn.graphlineMu.Lock()
-		defer sn.graphlineMu.Unlock()
+		ns.graphlineMu.Lock()
+		defer ns.graphlineMu.Unlock()
 
 		LINE_STR := "│"
 		START_STR := "┌"
 		END_STR := "└"
 		CANCEL_STR := "┴"
 
-		for i := range sn.graphline {
-			if sn.graphline[i].occupied {
-				sn.graphline[i].str = LINE_STR
+		for i := range ns.graphline {
+			if ns.graphline[i].occupied {
+				ns.graphline[i].str = LINE_STR
 			} else {
-				sn.graphline[i].str = " "
+				ns.graphline[i].str = " "
 			}
 		}
 
@@ -318,17 +318,17 @@ func (sn *Syncnet) newLog(eventReqs []eventActorMsgStruct, msg string, matchID s
 		case "+":
 			for _, eventReq := range eventReqs {
 				vacantFound := false
-				for i := range sn.graphline {
-					if !sn.graphline[i].occupied {
-						sn.graphline[i].rid = eventReq.RID
-						sn.graphline[i].str = START_STR
-						sn.graphline[i].occupied = true
+				for i := range ns.graphline {
+					if !ns.graphline[i].occupied {
+						ns.graphline[i].rid = eventReq.RID
+						ns.graphline[i].str = START_STR
+						ns.graphline[i].occupied = true
 						vacantFound = true
 						break
 					}
 				}
 				if !vacantFound {
-					sn.graphline = append(sn.graphline, graphLineStruct{
+					ns.graphline = append(ns.graphline, graphLineStruct{
 						rid:      eventReq.RID,
 						str:      START_STR,
 						occupied: true,
@@ -343,11 +343,11 @@ func (sn *Syncnet) newLog(eventReqs []eventActorMsgStruct, msg string, matchID s
 				chr = END_STR
 			}
 			for _, eventReq := range eventReqs {
-				for i := range sn.graphline {
-					if eventReq.RID == sn.graphline[i].rid {
-						sn.graphline[i].rid = eventReq.RID
-						sn.graphline[i].str = chr
-						sn.graphline[i].occupied = false
+				for i := range ns.graphline {
+					if eventReq.RID == ns.graphline[i].rid {
+						ns.graphline[i].rid = eventReq.RID
+						ns.graphline[i].str = chr
+						ns.graphline[i].occupied = false
 						break
 					}
 				}
@@ -362,7 +362,7 @@ func (sn *Syncnet) newLog(eventReqs []eventActorMsgStruct, msg string, matchID s
 			buf = bytes.NewBufferString("")
 		}
 
-		for _, gl := range sn.graphline {
+		for _, gl := range ns.graphline {
 			buf.WriteString(fmt.Sprintf("%s", gl.str))
 		}
 
@@ -377,13 +377,13 @@ func (sn *Syncnet) newLog(eventReqs []eventActorMsgStruct, msg string, matchID s
 		}
 
 		for {
-			if len(sn.graphline) == 0 {
+			if len(ns.graphline) == 0 {
 				break
 			}
 
-			if sn.graphline[len(sn.graphline)-1].occupied == false {
+			if ns.graphline[len(ns.graphline)-1].occupied == false {
 				// if it is the last item, shrink the slice
-				sn.graphline = sn.graphline[:len(sn.graphline)-1]
+				ns.graphline = ns.graphline[:len(ns.graphline)-1]
 			} else {
 				break
 			}
@@ -392,22 +392,21 @@ func (sn *Syncnet) newLog(eventReqs []eventActorMsgStruct, msg string, matchID s
 		return buf.String()
 	}
 
-	return fmt.Sprintf("unknown format %q", sn.LogFormat)
+	return fmt.Sprintf("unknown format %q", ns.LogFormat)
 }
 
 // Send will dispatch an event with params.
 // This function will not block.
 // The returned channel should be used to await synchronization of this event.
 //
-//     doneChan, err := sn.Send(syncnet.Params{
+//     doneChan, err := ns.Send(netsync.Params{
 //       Actor: "CUST",
 //       Event: "choc",
 //       Payload: "Please give me a chocolate",
 //     })
 //
 //     output := <-doneChan // this will block until sync
-//
-func (sn *Syncnet) Send(params Params) (chan OutValue, error) {
+func (ns *Netsync) Send(params Params) (chan OutValue, error) {
 
 	if params.Event == "" {
 		return nil, fmt.Errorf("empty event")
@@ -435,7 +434,7 @@ func (sn *Syncnet) Send(params Params) (chan OutValue, error) {
 	}
 
 	readyChan := make(chan OutValue)
-	sn.eventRequestChan <- eventActorMsgStruct{
+	ns.eventRequestChan <- eventActorMsgStruct{
 		RID:       randStringRunes(8),
 		Params:    params,
 		Selector:  lq,
@@ -448,14 +447,14 @@ func (sn *Syncnet) Send(params Params) (chan OutValue, error) {
 	return readyChan, nil
 }
 
-func (sn *Syncnet) NewHandler() http.Handler {
+func (ns *Netsync) NewHandler() http.Handler {
 	serveMux := http.NewServeMux()
 
 	serveMux.HandleFunc("/stats", func(rw http.ResponseWriter, r *http.Request) {
-		sn.eventToActorToRequestMap.mu.RLock()
-		defer sn.eventToActorToRequestMap.mu.RUnlock()
+		ns.eventToActorToRequestMap.mu.RLock()
+		defer ns.eventToActorToRequestMap.mu.RUnlock()
 
-		rw.Write(mustMarshalJson(sn.eventToActorToRequestMap.Map))
+		rw.Write(mustMarshalJson(ns.eventToActorToRequestMap.Map))
 		rw.Write([]byte("\n"))
 	})
 
@@ -516,7 +515,7 @@ func (sn *Syncnet) NewHandler() http.Handler {
 		}
 
 		readyChan := make(chan OutValue)
-		sn.eventRequestChan <- eventActorMsgStruct{
+		ns.eventRequestChan <- eventActorMsgStruct{
 			RID:       rid,
 			Params:    params,
 			OutChan:   readyChan,

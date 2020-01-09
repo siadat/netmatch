@@ -1,4 +1,4 @@
-package syncnet_test
+package netsync_test
 
 import (
 	"context"
@@ -13,11 +13,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/siadat/syncnet"
+	"github.com/siadat/netsync"
 	"github.com/stretchr/testify/require"
 )
 
-func paramsToURL(p syncnet.Params) string {
+func paramsToURL(p netsync.Params) string {
 	labels := make([]string, 0, len(p.Labels))
 	for k, v := range p.Labels {
 		labels = append(labels, strings.Join([]string{k, v}, "="))
@@ -35,7 +35,7 @@ func paramsToURL(p syncnet.Params) string {
 func TestBasic(t *testing.T) {
 	// t.Parallel()
 
-	requests := []syncnet.Params{
+	requests := []netsync.Params{
 		{
 			Event:   "e",
 			Actor:   "a1",
@@ -48,16 +48,16 @@ func TestBasic(t *testing.T) {
 		},
 	}
 
-	sn := syncnet.NewSyncnet()
-	defer sn.Close()
+	ns := netsync.NewNetsync()
+	defer ns.Close()
 
 	wg := sync.WaitGroup{}
 	for _, p := range requests {
 		wg.Add(1)
-		go func(p syncnet.Params) {
+		go func(p netsync.Params) {
 			defer wg.Done()
 
-			ch, err := sn.Send(p)
+			ch, err := ns.Send(p)
 			require.NoError(t, err)
 
 			outValue := <-ch
@@ -74,7 +74,7 @@ func TestBasicTriplet(t *testing.T) {
 	// t.Parallel()
 
 	ctx, _ := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	requests := []syncnet.Params{
+	requests := []netsync.Params{
 		{
 			Event:   "e",
 			Actor:   "a1",
@@ -98,16 +98,16 @@ func TestBasicTriplet(t *testing.T) {
 		},
 	}
 
-	sn := syncnet.NewSyncnet()
-	defer sn.Close()
+	ns := netsync.NewNetsync()
+	defer ns.Close()
 
 	wg := sync.WaitGroup{}
 	for _, p := range requests {
 		wg.Add(1)
-		go func(p syncnet.Params) {
+		go func(p netsync.Params) {
 			defer wg.Done()
 
-			ch, err := sn.Send(p)
+			ch, err := ns.Send(p)
 			require.NoError(t, err)
 
 			select {
@@ -127,13 +127,13 @@ func TestBasicTriplet(t *testing.T) {
 func TestHttpBasic(t *testing.T) {
 	// t.Parallel()
 
-	sn := syncnet.NewSyncnet()
-	defer sn.Close()
+	ns := netsync.NewNetsync()
+	defer ns.Close()
 
-	ts := httptest.NewServer(sn.NewHandler())
+	ts := httptest.NewServer(ns.NewHandler())
 	defer ts.Close()
 
-	requests := []syncnet.Params{
+	requests := []netsync.Params{
 		{
 			Event:   "e",
 			Actor:   "a1",
@@ -150,7 +150,7 @@ func TestHttpBasic(t *testing.T) {
 	wg := sync.WaitGroup{}
 	for _, p := range requests {
 		wg.Add(1)
-		go func(p syncnet.Params) {
+		go func(p netsync.Params) {
 			defer wg.Done()
 
 			resp, err := client.Get(ts.URL + paramsToURL(p))
@@ -162,7 +162,7 @@ func TestHttpBasic(t *testing.T) {
 			require.NoError(t, err)
 			resp.Body.Close()
 
-			outValue := syncnet.OutValue{}
+			outValue := netsync.OutValue{}
 			err = json.Unmarshal(body, &outValue)
 			require.NoError(t, err)
 
@@ -177,13 +177,13 @@ func TestHttpBasic(t *testing.T) {
 func TestHttpMustBlock(t *testing.T) {
 	// t.Parallel()
 
-	sn := syncnet.NewSyncnet()
-	defer sn.Close()
+	ns := netsync.NewNetsync()
+	defer ns.Close()
 
-	ts := httptest.NewServer(sn.NewHandler())
+	ts := httptest.NewServer(ns.NewHandler())
 	defer ts.Close()
 
-	requests := []syncnet.Params{
+	requests := []netsync.Params{
 		{
 			Event:   "e",
 			Actor:   "a", // same actor
@@ -200,7 +200,7 @@ func TestHttpMustBlock(t *testing.T) {
 	wg := sync.WaitGroup{}
 	for _, p := range requests {
 		wg.Add(1)
-		go func(p syncnet.Params) {
+		go func(p netsync.Params) {
 			defer wg.Done()
 
 			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
@@ -220,19 +220,19 @@ func TestHttpMustBlock(t *testing.T) {
 func TestHttpMustBlockBecauseOfSelector(t *testing.T) {
 	// t.Parallel()
 
-	sn := syncnet.NewSyncnet()
-	defer sn.Close()
+	ns := netsync.NewNetsync()
+	defer ns.Close()
 
-	ts := httptest.NewServer(sn.NewHandler())
+	ts := httptest.NewServer(ns.NewHandler())
 	defer ts.Close()
 
 	testCases := []struct {
 		wantBlock bool
-		requests  []syncnet.Params
+		requests  []netsync.Params
 	}{
 		{
 			wantBlock: true,
-			requests: []syncnet.Params{
+			requests: []netsync.Params{
 				{
 					Event:   "e",
 					Actor:   "a1",
@@ -243,13 +243,13 @@ func TestHttpMustBlockBecauseOfSelector(t *testing.T) {
 					Event:    "e",
 					Actor:    "a2",
 					Payload:  "v",
-					Selector: "label1 != value1", // a2 doesn't like events where label1=value1
+					Selector: "label1 != value1", // a2 doens't like events where label1=value1
 				},
 			},
 		},
 		{
 			wantBlock: false,
-			requests: []syncnet.Params{
+			requests: []netsync.Params{
 				{
 					Event:   "e",
 					Actor:   "a1",
@@ -276,7 +276,7 @@ func TestHttpMustBlockBecauseOfSelector(t *testing.T) {
 			// we can test if a1's selector is applied as well as a2's
 			// selector
 			time.Sleep(50 * time.Millisecond)
-			go func(p syncnet.Params) {
+			go func(p netsync.Params) {
 				defer wg.Done()
 
 				if tt.wantBlock {
@@ -290,7 +290,7 @@ func TestHttpMustBlockBecauseOfSelector(t *testing.T) {
 					require.Error(t, err)
 					require.Error(t, ctx.Err())
 				} else {
-					ch, err := sn.Send(p)
+					ch, err := ns.Send(p)
 					require.NoError(t, err)
 
 					outValue := <-ch

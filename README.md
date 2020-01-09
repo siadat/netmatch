@@ -1,18 +1,19 @@
-# syncnet
-[![GoDoc](https://godoc.org/github.com/siadat/syncnet?status.svg)][godoc]
-[![Build Status](https://travis-ci.org/siadat/syncnet.svg?branch=master)][travis]
+# Netsync
+[![GoDoc](https://godoc.org/github.com/siadat/netsync?status.svg)][godoc]
+[![Build Status](https://travis-ci.org/siadat/netsync.svg?branch=master)][travis]
 
-Syncnet is a synchronized messaging system.
+Netsync is a synchronized messaging system.
 It is a tool for synchronoizing processes over network via HTTP requests.
 It also provides a Go API ([Go docs][godoc]) which could be used to synchronize Go routines.
 
 This is an experiment inspired by the ideas in [CSP][csp_homepage] and Go unbuffered channels.
 While this tool does provide features that are not available in other tools (e.g., allowing more than two clients to synchronize)
 most systems are probably better designed with async, buffered message queues.
+
 With that in mind, let the fun begin!
 
-[godoc]:  https://godoc.org/github.com/siadat/syncnet
-[travis]: https://travis-ci.org/siadat/syncnet
+[godoc]:  https://godoc.org/github.com/siadat/netsync
+[travis]: https://travis-ci.org/siadat/netsync
 [csp_homepage]: http://www.usingcsp.com/
 [k8s_labels_and_selectors]: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
 
@@ -21,8 +22,8 @@ With that in mind, let the fun begin!
 Start the server:
 
 ```bash
-go install github.com/siadat/syncnet/cmd/syncnet
-syncnet :8000
+go install github.com/siadat/netsync/cmd/netsync
+netsync :8000
 ```
 
 Run the following on a terminal:
@@ -90,7 +91,7 @@ In [CSP][csp_homepage] notation, they can be described as:
     SYSTEM = CUST || VM
 
 VM and CUST must synchronize on `coin` and `choc` events.
-Using Syncnet, we can write the processes in Bash, e.g. the code for VM might look like this:
+Using Netsync, we can write the processes in Bash, e.g. the code for VM might look like this:
 
 ```bash
 curl "http://localhost:8000/event?actor=VM&mates=1&event=coin" # VM's 1st request
@@ -104,7 +105,7 @@ curl "http://localhost:8000/event?actor=CUST&mates=1&event=coin" # CUST's 1st re
 curl "http://localhost:8000/event?actor=CUST&mates=1&event=choc" # CUST's 2nd request
 ```
 
-When run concurrently, the log of Syncnet will look like this:
+When run concurrently, the log of Netsync will look like this:
 
 ```
 ┌─ VM:coin            # 'coin' from VM
@@ -180,7 +181,7 @@ The default value is 1.
 
 ### selector=
 Selectors filter what events can or cannot be used for
-synchronizing. E.g., an actor (a Syncnet client) might only want to sync with
+synchronizing. E.g., an actor (a Netsync client) might only want to sync with
 events of a particular actor.
 The formatting is identical with [Kubernetes Labels and Selectors][k8s_labels_and_selectors].
 
@@ -195,10 +196,10 @@ The default label is `actor=$MyActorName`
 ## Using the Go API
 
 ```go
-sn := syncnet.NewSyncnet()
-defer sn.Close()
+ns := netsync.NewNetsync()
+defer ns.Close()
 
-doneChan, err := sn.Send(syncnet.Params{
+doneChan, err := ns.Send(netsync.Params{
   Actor: "CUST",
   Event: "choc",
   Payload: "Please give me a chocolate",
