@@ -51,11 +51,12 @@ Both of these will receive the following JSON response:
 }
 ```
 
-Note that these two requests matched and synced together because three conditions are met:
+Note that these two requests matched and synced together because the following conditions are met:
 
-- identical event names (`e` and `e`)
-- `actor != actor1` (the default selector of the 1st request) matches with `actor = actor2` (the default label of the other request)
-- `actor != actor2` (the default selector of the 2nd request) matches with `actor = actor1` (the default label of the other request)
+- :white_check_mark: **event name**: The event names are identical, i.e., `e`.
+- :white_check_mark: **selector 1 and label 2 match**: 1st request's selector (default: `actor != actor1`) matches 2nd request's label (default: `actor = actor2`).
+- :white_check_mark: **selector 2 and label 1 match**: 2nd request's selector (default: `actor != actor2`) matches 1st request's label (default: `actor = actor1`).
+- :white_check_mark: **number of mates**: Each request is asking for 1 other request to sync (because the default value of `mates` is 1) and there are already 2 requests.
 
 ## Example: sync 3 processes
 
