@@ -26,7 +26,7 @@ type Params struct {
 	Context    context.Context   `json:"-"`
 }
 
-type EventActorMessage struct {
+type eventActorMsgStruct struct {
 	Params    Params          `json:"params"`
 	RID       string          `json:"-"`
 	OutChan   chan OutValue   `json:"-"`
@@ -40,12 +40,12 @@ type OutValue struct {
 	Payloads map[string]string `json:"payloads"`
 }
 
-type EventToActorToRequestMap struct {
-	Map map[string]map[string]map[string]EventActorMessage
+type eventToActorToReqStruct struct {
+	Map map[string]map[string]map[string]eventActorMsgStruct
 	mu  *sync.RWMutex
 }
 
-type LogEvent struct {
+type logEventStruct struct {
 	Time       time.Time  `json:"time,omitempty"`
 	RID        string     `json:"rid"`
 	MatchID    string     `json:"match_id,omitempty"`
@@ -76,8 +76,8 @@ type Syncnet struct {
 	graphlineMu *sync.Mutex
 
 	pendingCounter           int32
-	eventRequestChan         chan EventActorMessage
-	eventToActorToRequestMap EventToActorToRequestMap
+	eventRequestChan         chan eventActorMsgStruct
+	eventToActorToRequestMap eventToActorToReqStruct
 }
 
 // Close tears down internal goroutines to free up resources. It
@@ -98,9 +98,9 @@ func NewSyncnet() *Syncnet {
 
 	sn.terminateChan = make(chan struct{})
 	sn.terminateWG = sync.WaitGroup{}
-	sn.eventRequestChan = make(chan EventActorMessage)
-	sn.eventToActorToRequestMap = EventToActorToRequestMap{
-		Map: make(map[string]map[string]map[string]EventActorMessage),
+	sn.eventRequestChan = make(chan eventActorMsgStruct)
+	sn.eventToActorToRequestMap = eventToActorToReqStruct{
+		Map: make(map[string]map[string]map[string]eventActorMsgStruct),
 		mu:  &sync.RWMutex{},
 	}
 
@@ -121,7 +121,7 @@ func NewSyncnet() *Syncnet {
 	go func() {
 		defer sn.terminateWG.Done()
 		for {
-			var eventReq EventActorMessage
+			var eventReq eventActorMsgStruct
 			select {
 			case <-sn.terminateChan:
 				return
@@ -129,15 +129,15 @@ func NewSyncnet() *Syncnet {
 			}
 
 			atomic.AddInt32(&sn.pendingCounter, 1)
-			fmt.Println(sn.newLog([]EventActorMessage{eventReq}, "+", ""))
+			fmt.Println(sn.newLog([]eventActorMsgStruct{eventReq}, "+", ""))
 			sn.terminateWG.Add(1)
-			go func(eventReq EventActorMessage) {
+			go func(eventReq eventActorMsgStruct) {
 
 				matchID := ""
 				defer func() {
 					atomic.AddInt32(&sn.pendingCounter, -1)
 					if !(sn.LogFormat == "graph" && matchID != "") {
-						fmt.Println(sn.newLog([]EventActorMessage{eventReq}, "-", matchID))
+						fmt.Println(sn.newLog([]eventActorMsgStruct{eventReq}, "-", matchID))
 					}
 					sn.terminateWG.Done()
 				}()
@@ -163,8 +163,8 @@ func NewSyncnet() *Syncnet {
 				}
 			}(eventReq)
 
-			requests, ok := func(eventReq EventActorMessage) ([]EventActorMessage, bool) {
-				requests := []EventActorMessage{eventReq}
+			requests, ok := func(eventReq eventActorMsgStruct) ([]eventActorMsgStruct, bool) {
+				requests := []eventActorMsgStruct{eventReq}
 				if eventReq.Params.MateWanted == 0 {
 					return requests, true
 				}
@@ -198,7 +198,7 @@ func NewSyncnet() *Syncnet {
 						}
 					}
 				}
-				return []EventActorMessage{}, false
+				return []eventActorMsgStruct{}, false
 			}(eventReq)
 
 			if ok {
@@ -239,15 +239,15 @@ func NewSyncnet() *Syncnet {
 				defer sn.eventToActorToRequestMap.mu.Unlock()
 
 				if _, ok := sn.eventToActorToRequestMap.Map[eventReq.Params.Event]; !ok {
-					sn.eventToActorToRequestMap.Map[eventReq.Params.Event] = map[string]map[string]EventActorMessage{}
+					sn.eventToActorToRequestMap.Map[eventReq.Params.Event] = map[string]map[string]eventActorMsgStruct{}
 				}
 				if _, ok := sn.eventToActorToRequestMap.Map[eventReq.Params.Event][eventReq.Params.Actor]; !ok {
-					sn.eventToActorToRequestMap.Map[eventReq.Params.Event][eventReq.Params.Actor] = map[string]EventActorMessage{}
+					sn.eventToActorToRequestMap.Map[eventReq.Params.Event][eventReq.Params.Actor] = map[string]eventActorMsgStruct{}
 				}
 				sn.eventToActorToRequestMap.Map[eventReq.Params.Event][eventReq.Params.Actor][eventReq.RID] = eventReq
 
 				sn.terminateWG.Add(1)
-				go func(eventReq EventActorMessage) {
+				go func(eventReq eventActorMsgStruct) {
 					defer sn.terminateWG.Done()
 
 					select {
@@ -265,11 +265,11 @@ func NewSyncnet() *Syncnet {
 	return &sn
 }
 
-func (sn *Syncnet) newLog(eventReqs []EventActorMessage, msg string, matchID string) string {
+func (sn *Syncnet) newLog(eventReqs []eventActorMsgStruct, msg string, matchID string) string {
 	switch sn.LogFormat {
 	case "json":
 		for _, eventReq := range eventReqs {
-			return string(mustMarshalJson(LogEvent{
+			return string(mustMarshalJson(logEventStruct{
 				RID:        eventReq.RID,
 				Actor:      eventReq.Params.Actor,
 				Selector:   eventReq.Selector.String(),
@@ -410,8 +410,8 @@ func (sn *Syncnet) Send(params Params) (chan OutValue, error) {
 	}
 
 	readyChan := make(chan OutValue)
-	sn.eventRequestChan <- EventActorMessage{
-		RID:       RandStringRunes(8),
+	sn.eventRequestChan <- eventActorMsgStruct{
+		RID:       randStringRunes(8),
 		Params:    params,
 		Selector:  lq,
 		Labels:    labels.Set(params.Labels),
@@ -435,7 +435,7 @@ func (sn *Syncnet) NewHandler() http.Handler {
 	})
 
 	serveMux.HandleFunc("/event", func(rw http.ResponseWriter, r *http.Request) {
-		rid := RandStringRunes(8)
+		rid := randStringRunes(8)
 		event := r.URL.Query().Get("event")
 		actor := r.URL.Query().Get("actor")
 		payload := r.URL.Query().Get("payload")
@@ -491,7 +491,7 @@ func (sn *Syncnet) NewHandler() http.Handler {
 		}
 
 		readyChan := make(chan OutValue)
-		sn.eventRequestChan <- EventActorMessage{
+		sn.eventRequestChan <- eventActorMsgStruct{
 			RID:       rid,
 			Params:    params,
 			OutChan:   readyChan,
@@ -511,7 +511,7 @@ func (sn *Syncnet) NewHandler() http.Handler {
 	return serveMux
 }
 
-func cleanMap(eventToActorToRequestMap EventToActorToRequestMap, toBeCleanedRID string) {
+func cleanMap(eventToActorToRequestMap eventToActorToReqStruct, toBeCleanedRID string) {
 	eventToActorToRequestMap.mu.Lock()
 	defer eventToActorToRequestMap.mu.Unlock()
 
@@ -535,7 +535,7 @@ func cleanMap(eventToActorToRequestMap EventToActorToRequestMap, toBeCleanedRID 
 
 var letterRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
-func RandStringRunes(n int) string {
+func randStringRunes(n int) string {
 	b := make([]rune, n)
 	for i := range b {
 		b[i] = letterRunes[rand.Intn(len(letterRunes))]
