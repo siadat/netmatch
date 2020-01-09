@@ -32,24 +32,30 @@ netsync :8000
 Run the following on a terminal:
 
 ```bash
-curl "http://localhost:8000/event?event=e&payload=v1&actor=VM"
+curl "http://localhost:8000/event?event=e&payload=v1&actor=actor1"
 ```
 
 On another terminal, run:
 
 ```bash
-curl "http://localhost:8000/event?event=e&payload=v2&actor=CUST"
+curl "http://localhost:8000/event?event=e&payload=v2&actor=actor2"
 ```
 
 Both of these will receive the following JSON response:
 ```json
 {
   "payloads": {
-    "CUST": "v2",
-    "VM": "v1"
+    "actor2": "v2",
+    "actor1": "v1"
   }
 }
 ```
+
+Note that these two requests matched and synced together because three conditions are met:
+
+- identical event names (`e` and `e`)
+- `actor != actor1` (the default selector of the 1st request) matches with `actor = actor2` (the default label of the other request)
+- `actor != actor2` (the default selector of the 2nd request) matches with `actor = actor1` (the default label of the other request)
 
 ## Example: sync 3 processes
 
