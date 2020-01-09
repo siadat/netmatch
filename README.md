@@ -9,7 +9,7 @@
 [k8s_labels_and_selectors]: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
 
 Netsync is a synchronized messaging system.
-It is a tool for synchronoizing processes over network via HTTP requests.
+It is a tool for synchronizing processes over the network via HTTP requests.
 It also provides a Go API ([Go docs][godoc]) which could be used to synchronize goroutines.
 
 It may be used for matching online players (and an optional game maker) in an online multiplayer game server.
@@ -17,7 +17,7 @@ It may be used for matching online players (and an optional game maker) in an on
 ## What does it do?
 
 One process sends an HTTP request, and it is blocked until N
-other matching processes send N other request with the same "event" query value.
+other matching processes send N other requests with the same "event" query value.
 The requests might have a *payload* value, which is shared with all requests in
 the responses they eventually receive upon syncing.
 Matching of requests can be limited using *labels* and *selectors*.
@@ -122,7 +122,7 @@ All three processes (players and the game maker) will receive this response:
 ## I still don't get it...
 
 Suppose we have two programs running concurrently,
-and these processes are required to synchronize on a event EVENT before proceeding.
+and these processes are required to synchronize on an event EVENT before proceeding.
 The logs of these processes could look like this:
 
     time  Process 1  Process 2
@@ -137,7 +137,7 @@ The logs of these processes could look like this:
 
 Perhaps Process 1 needs to read a file that is created by Process 2, so Process 1 must wait until that file is ready.
 In this case, EVENT is "file is ready".
-We want this EVENT to be synchronized accross the two processes, so, the desired log should look like:
+We want this EVENT to be synchronized across the two processes, so, the desired log should look like:
 
     time  Process 1  Process 2
     ----  ---------  ---------
@@ -149,15 +149,15 @@ We want this EVENT to be synchronized accross the two processes, so, the desired
     6   └───────────>p2.EVENT
     7     p1.log3    p2.log5
 
-Process 1 is blocked for 2 time units, i.e., p1.log3 is not executed until p2.EVENT is executed.
+Process 1 is blocked for 2 time-units, i.e., p1.log3 is not executed until p2.EVENT is executed.
 
 ## Concepts
 
 - Event: An event is used to identify which requests can be matched with each other.
-- Actor: An actor is a client name. It is used as a label to filter who can match who.
-- Mate: A mate is the other side of the match. A match could require have 1, 2, or more mates.
+- Actor: An actor is a client's name. It is used as a label to filter who can match who. This might be removed in favor of labels.
+- Mate: A mate is the other side of the match. A match could require 1, 2, or more mates.
 - Selector: A selector is used in a request to specify the desired requests it wants to match with.
-- Label: Each request has one or several labels which other requests use with their selectors to see if they are interested in a match.
+- Label: Each request has one or several labels that other requests use with their selectors to see if they are interested in a match.
 
 ## Endpoints
 
@@ -224,7 +224,7 @@ The default value is 1.
 ### selector=
 Selectors filter what events can or cannot be used for
 synchronizing. E.g., an actor (a Netsync client) might only want to sync with
-events of a particular actor.
+the events of a particular actor.
 The formatting is identical to that of the [Labels and Selectors][k8s_labels_and_selectors] of Kubernetes.
 
 The default selector is `actor!=$MyActorName`, i.e., don't match me with another request from myself.
