@@ -62,8 +62,6 @@ Note that these two requests matched and synced together because the following c
 
 ## Example: match 2 players
 
-With `mates=2` the request is blocked until 2 other requests are made.
-
 ```bash
 curl "http://localhost:8000/event?event=newGame&payload=v1&actor=player1" &
 curl "http://localhost:8000/event?event=newGame&payload=v2&actor=player2" &
