@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -17,10 +18,16 @@ import (
 )
 
 func paramsToURL(p syncnet.Params) string {
-	return fmt.Sprintf("/event?event=%s&actor=%s&payload=%s&selector=%s",
+	labels := make([]string, 0, len(p.Labels))
+	for k, v := range p.Labels {
+		labels = append(labels, strings.Join([]string{k, v}, "="))
+	}
+
+	return fmt.Sprintf("/event?event=%s&actor=%s&payload=%s&labels=%s&selector=%s",
 		url.QueryEscape(p.Event),
 		url.QueryEscape(p.Actor),
 		url.QueryEscape(p.Payload),
+		url.QueryEscape(strings.Join(labels, ",")),
 		url.QueryEscape(p.Selector),
 	)
 }
@@ -219,43 +226,81 @@ func TestHttpMustBlockBecauseOfSelector(t *testing.T) {
 	ts := httptest.NewServer(sn.NewHandler())
 	defer ts.Close()
 
-	requests := []syncnet.Params{
+	testCases := []struct {
+		wantBlock bool
+		requests  []syncnet.Params
+	}{
 		{
-			Event:    "e",
-			Actor:    "a1",
-			Payload:  "v",
-			Selector: "actor != a2", // a1 doesn't like a2
+			wantBlock: true,
+			requests: []syncnet.Params{
+				{
+					Event:   "e",
+					Actor:   "a1",
+					Payload: "v",
+					Labels:  map[string]string{"label1": "value1"},
+				},
+				{
+					Event:    "e",
+					Actor:    "a2",
+					Payload:  "v",
+					Selector: "label1 != value1", // a2 doesn't like events where label1=value1
+				},
+			},
 		},
 		{
-			Event:    "e",
-			Actor:    "a2",
-			Payload:  "v",
-			Selector: "actor != a2", // but a2 has no problem with a1
+			wantBlock: false,
+			requests: []syncnet.Params{
+				{
+					Event:   "e",
+					Actor:   "a1",
+					Payload: "v",
+					Labels:  map[string]string{"label1": "value1"},
+				},
+				{
+					Event:    "e",
+					Actor:    "a2",
+					Payload:  "v",
+					Selector: "label1 == value1", // a2 only syncs with label1=value1
+				},
+			},
 		},
 	}
 
 	client := ts.Client()
 	wg := sync.WaitGroup{}
-	for _, p := range requests {
-		wg.Add(1)
+	for _, tt := range testCases {
+		for _, p := range tt.requests {
+			wg.Add(1)
 
-		// this sleep is here to ensure a1 sends it's request first, so
-		// we can test if a1's selector is applied as well as a2's
-		// selector
-		time.Sleep(50 * time.Millisecond)
-		go func(p syncnet.Params) {
-			defer wg.Done()
+			// this sleep is here to ensure a1 sends it's request first, so
+			// we can test if a1's selector is applied as well as a2's
+			// selector
+			time.Sleep(50 * time.Millisecond)
+			go func(p syncnet.Params) {
+				defer wg.Done()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-			defer cancel()
+				if tt.wantBlock {
+					ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+					defer cancel()
 
-			httpReq, err := http.NewRequestWithContext(ctx, "GET", ts.URL+paramsToURL(p), nil)
-			require.NoError(t, err)
+					httpReq, err := http.NewRequestWithContext(ctx, "GET", ts.URL+paramsToURL(p), nil)
+					require.NoError(t, err)
 
-			_, err = client.Do(httpReq)
-			require.Error(t, err)
-			require.Error(t, ctx.Err())
-		}(p)
+					_, err = client.Do(httpReq)
+					require.Error(t, err)
+					require.Error(t, ctx.Err())
+				} else {
+					ch, err := sn.Send(p)
+					require.NoError(t, err)
+
+					outValue := <-ch
+
+					require.Equal(t, 2, len(outValue.Payloads))
+					// require.Equal(t, "v1", outValue.Payloads["a1"])
+					// require.Equal(t, "v2", outValue.Payloads["a2"])
+				}
+			}(p)
+		}
+		wg.Wait()
 	}
-	wg.Wait()
 }

@@ -341,10 +341,22 @@ func (sn *Syncnet) newLog(eventReqs []EventActorMessage, msg string, matchID str
 			}
 		}
 
-		buf := bytes.NewBufferString("")
+		var buf *bytes.Buffer
+
+		if false {
+			buf = bytes.NewBufferString(time.Now().Format(time.RFC3339) + " ")
+		} else {
+			buf = bytes.NewBufferString("")
+		}
 
 		for _, gl := range sn.graphline {
 			buf.WriteString(fmt.Sprintf("%s", gl.str))
+		}
+
+		if msg == "m" {
+			buf.WriteString(fmt.Sprintf(" match"))
+		} else if msg == "-" {
+			buf.WriteString(fmt.Sprintf(" stopped"))
 		}
 
 		for _, eventReq := range eventReqs {
@@ -427,17 +439,35 @@ func (sn *Syncnet) NewHandler() http.Handler {
 		event := r.URL.Query().Get("event")
 		actor := r.URL.Query().Get("actor")
 		payload := r.URL.Query().Get("payload")
+		labelsMap := map[string]string{}
 
-		mateCount := 1
-		selector := fmt.Sprintf("actor != %s", actor)
+		labelsStr := r.URL.Query().Get("labels")
+		selectorStr := r.URL.Query().Get("selector")
 
-		if r.URL.Query().Get("selector") != "" {
-			selector = r.URL.Query().Get("selector")
+		if len(labelsStr) == 0 {
+			labelsMap = labels.Set{"actor": actor}
+		} else {
+			for _, l := range strings.Split(labelsStr, ",") {
+				keyval := strings.Split(l, "=")
+				if len(keyval) != 2 {
+					rw.Write([]byte(fmt.Sprintf("bad label: %q\n", keyval)))
+					return
+				}
+				key := keyval[0]
+				val := keyval[1]
+				labelsMap[key] = val
+			}
 		}
 
-		lq, err := labels.Parse(selector)
+		mateCount := 1
+
+		if selectorStr == "" {
+			selectorStr = fmt.Sprintf("actor != %s", actor)
+		}
+
+		lq, err := labels.Parse(selectorStr)
 		if err != nil {
-			rw.Write([]byte(fmt.Sprintf("bad selector: %v\n", err)))
+			rw.Write([]byte(fmt.Sprintf("bad selector %q: %v\n", selectorStr, err)))
 			return
 		}
 
@@ -454,8 +484,8 @@ func (sn *Syncnet) NewHandler() http.Handler {
 			Event:      event,
 			Actor:      actor,
 			Payload:    payload,
-			Labels:     labels.Set{"actor": actor},
-			Selector:   selector,
+			Labels:     labels.Set(labelsMap),
+			Selector:   selectorStr,
 			MateWanted: mateCount,
 			Context:    r.Context(),
 		}
@@ -468,7 +498,7 @@ func (sn *Syncnet) NewHandler() http.Handler {
 			CreatedAt: time.Now(),
 			MatchChan: make(chan string),
 			Selector:  lq,
-			Labels:    labels.Set{"actor": actor},
+			Labels:    labels.Set(labelsMap),
 		}
 
 		select {
