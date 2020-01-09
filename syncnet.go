@@ -17,13 +17,26 @@ import (
 )
 
 type Params struct {
-	Event      string            `json:"event"`
-	Actor      string            `json:"actor"`
-	Payload    string            `json:"payload"`
-	Labels     map[string]string `json:"labels"`
-	Selector   string            `json:"selector"`
-	MateWanted int               `json:"mate_wanted"`
-	Context    context.Context   `json:"-"`
+	// Event is the name of event. It is used to match events when syncing.
+	Event string `json:"event"`
+	// Actor is a label that is used to filter events when matching. It is
+	// basically a label used by the default selector.
+	Actor string `json:"actor"`
+	// Payload is a string that is broadcast in the response to all events
+	// that are synced together.
+	Payload string `json:"payload"`
+	// Labels are used by selector to filter what events can match each
+	// other.
+	Labels map[string]string `json:"labels"`
+	// Selector is used to filter events by their labels.
+	// For example, event1 will match event2, if event2.Labels match
+	// event1.Selector.
+	Selector string `json:"selector"`
+	// Mates is the number of other events that should be present in order
+	// for this event to sync with them.
+	Mates int `json:"mates"`
+	// Context is used for cancelling an event.
+	Context context.Context `json:"-"`
 }
 
 type eventActorMsgStruct struct {
@@ -46,18 +59,18 @@ type eventToActorToReqStruct struct {
 }
 
 type logEventStruct struct {
-	Time       time.Time  `json:"time,omitempty"`
-	RID        string     `json:"rid"`
-	MatchID    string     `json:"match_id,omitempty"`
-	Msg        string     `json:"msg"`
-	Event      string     `json:"event"`
-	Actor      string     `json:"actor"`
-	Selector   string     `json:"selector,omitempty"`
-	Labels     labels.Set `json:"labels,omitempty"`
-	MateWanted int        `json:"mate_wanted"`
-	Payload    string     `json:"payload"`
-	Pending    int32      `json:"pending"`
-	Age        float64    `json:"age"`
+	Time     time.Time  `json:"time,omitempty"`
+	RID      string     `json:"rid"`
+	MatchID  string     `json:"match_id,omitempty"`
+	Msg      string     `json:"msg"`
+	Event    string     `json:"event"`
+	Actor    string     `json:"actor"`
+	Selector string     `json:"selector,omitempty"`
+	Labels   labels.Set `json:"labels,omitempty"`
+	Mates    int        `json:"mates"`
+	Payload  string     `json:"payload"`
+	Pending  int32      `json:"pending"`
+	Age      float64    `json:"age"`
 }
 
 type graphLineStruct struct {
@@ -165,11 +178,11 @@ func NewSyncnet() *Syncnet {
 
 			requests, ok := func(eventReq eventActorMsgStruct) ([]eventActorMsgStruct, bool) {
 				requests := []eventActorMsgStruct{eventReq}
-				if eventReq.Params.MateWanted == 0 {
+				if eventReq.Params.Mates == 0 {
 					return requests, true
 				}
 
-				maxMateCount := eventReq.Params.MateWanted
+				maxMateCount := eventReq.Params.Mates
 				sn.eventToActorToRequestMap.mu.RLock()
 				defer sn.eventToActorToRequestMap.mu.RUnlock()
 
@@ -186,8 +199,8 @@ func NewSyncnet() *Syncnet {
 								continue
 							default:
 								requests = append(requests, pendingReq)
-								if maxMateCount < pendingReq.Params.MateWanted {
-									maxMateCount = pendingReq.Params.MateWanted
+								if maxMateCount < pendingReq.Params.Mates {
+									maxMateCount = pendingReq.Params.Mates
 								}
 							}
 
@@ -270,18 +283,18 @@ func (sn *Syncnet) newLog(eventReqs []eventActorMsgStruct, msg string, matchID s
 	case "json":
 		for _, eventReq := range eventReqs {
 			return string(mustMarshalJson(logEventStruct{
-				RID:        eventReq.RID,
-				Actor:      eventReq.Params.Actor,
-				Selector:   eventReq.Selector.String(),
-				Labels:     eventReq.Labels,
-				Event:      eventReq.Params.Event,
-				MateWanted: eventReq.Params.MateWanted,
-				MatchID:    matchID,
-				Pending:    atomic.LoadInt32(&sn.pendingCounter),
-				Msg:        msg,
-				Time:       time.Now(),
-				Payload:    eventReq.Params.Payload,
-				Age:        time.Since(eventReq.CreatedAt).Seconds(),
+				RID:      eventReq.RID,
+				Actor:    eventReq.Params.Actor,
+				Selector: eventReq.Selector.String(),
+				Labels:   eventReq.Labels,
+				Event:    eventReq.Params.Event,
+				Mates:    eventReq.Params.Mates,
+				MatchID:  matchID,
+				Pending:  atomic.LoadInt32(&sn.pendingCounter),
+				Msg:      msg,
+				Time:     time.Now(),
+				Payload:  eventReq.Params.Payload,
+				Age:      time.Since(eventReq.CreatedAt).Seconds(),
 			}))
 		}
 	case "graph":
@@ -382,6 +395,18 @@ func (sn *Syncnet) newLog(eventReqs []eventActorMsgStruct, msg string, matchID s
 	return fmt.Sprintf("unknown format %q", sn.LogFormat)
 }
 
+// Send will dispatch an event with params.
+// This function will not block.
+// The returned channel should be used to await synchronization of this event.
+//
+//     doneChan, err := sn.Send(syncnet.Params{
+//       Actor: "CUST",
+//       Event: "choc",
+//       Payload: "Please give me a chocolate",
+//     })
+//
+//     output := <-doneChan // this will block until sync
+//
 func (sn *Syncnet) Send(params Params) (chan OutValue, error) {
 
 	if params.Event == "" {
@@ -401,8 +426,8 @@ func (sn *Syncnet) Send(params Params) (chan OutValue, error) {
 		return nil, err
 	}
 
-	if params.MateWanted == 0 {
-		params.MateWanted = 1
+	if params.Mates == 0 {
+		params.Mates = 1
 	}
 
 	if params.Context == nil {
@@ -481,13 +506,13 @@ func (sn *Syncnet) NewHandler() http.Handler {
 		}
 
 		params := Params{
-			Event:      event,
-			Actor:      actor,
-			Payload:    payload,
-			Labels:     labels.Set(labelsMap),
-			Selector:   selectorStr,
-			MateWanted: mateCount,
-			Context:    r.Context(),
+			Event:    event,
+			Actor:    actor,
+			Payload:  payload,
+			Labels:   labels.Set(labelsMap),
+			Selector: selectorStr,
+			Mates:    mateCount,
+			Context:  r.Context(),
 		}
 
 		readyChan := make(chan OutValue)

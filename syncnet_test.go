@@ -76,25 +76,25 @@ func TestBasicTriplet(t *testing.T) {
 	ctx, _ := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	requests := []syncnet.Params{
 		{
-			Event:      "e",
-			Actor:      "a1",
-			Payload:    "v1",
-			MateWanted: 2,
-			Context:    ctx,
+			Event:   "e",
+			Actor:   "a1",
+			Payload: "v1",
+			Mates:   2,
+			Context: ctx,
 		},
 		{
-			Event:      "e",
-			Actor:      "a2",
-			Payload:    "v2",
-			MateWanted: 2,
-			Context:    ctx,
+			Event:   "e",
+			Actor:   "a2",
+			Payload: "v2",
+			Mates:   2,
+			Context: ctx,
 		},
 		{
-			Event:      "e",
-			Actor:      "a3",
-			Payload:    "v3",
-			MateWanted: 2,
-			Context:    ctx,
+			Event:   "e",
+			Actor:   "a3",
+			Payload: "v3",
+			Mates:   2,
+			Context: ctx,
 		},
 	}
 

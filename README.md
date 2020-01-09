@@ -196,7 +196,7 @@ The default label is `actor=$MyActorName`
 sn := syncnet.NewSyncnet()
 defer sn.Close()
 
-doneChan := sn.Send(syncnet.Params{
+doneChan, _ := sn.Send(syncnet.Params{
   Actor: "CUST",
   Event: "choc",
   Payload: "Please give me a chocolate",
