@@ -123,7 +123,7 @@ All three processes (players and the game maker) will receive this response:
 
 Suppose we have two programs running concurrently,
 and these processes are required to synchronize on an event EVENT before proceeding.
-The logs of these processes could look like this:
+The logs of these processes could look like this (without synchronization):
 
     time  Process 1  Process 2
     ----  ---------  ---------
@@ -136,8 +136,8 @@ The logs of these processes could look like this:
     7                p2.log5
 
 Perhaps Process 1 needs to read a file that is created by Process 2, so Process 1 must wait until that file is ready.
-In this case, EVENT is "file is ready".
-We want this EVENT to be synchronized across the two processes, so, the desired log should look like:
+In this case, EVENT represents "file is ready".
+We want this EVENT to be synchronized across the two processes, so, the desired log should look like (with synchronization):
 
     time  Process 1  Process 2
     ----  ---------  ---------
@@ -149,7 +149,8 @@ We want this EVENT to be synchronized across the two processes, so, the desired 
     6   └───────────>p2.EVENT
     7     p1.log3    p2.log5
 
-Process 1 is blocked for 2 time-units, i.e., p1.log3 is not executed until p2.EVENT is executed.
+Notice that p1.log3 moved further down in the timeline, from time=5 to time=7.
+When p1.Event happens, Process 1 is blocked for 2 time-units and p1.log3 is not executed until p2.EVENT is executed as well.
 
 ## Concepts
 
