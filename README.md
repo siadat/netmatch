@@ -71,13 +71,57 @@ curl "http://localhost:8000/event?event=newGame&payload=v2&actor=player2" &
 
 ## Example: match 2 players and 1 game maker
 
+The game maker process creates a game with gameid=12345 and sends a request for 2 mates:
+
 ```bash
 curl "http://localhost:8000/event?event=joinGame&payload=gameid=12345&actor=gameMaker&mates=2" &
-curl "http://localhost:8000/event?event=joinGame&actor=player1&mates=2" &
-curl "http://localhost:8000/event?event=joinGame&actor=player2&mates=2" &
 ```
 
-## Detailed example
+You can inspect this pending request by calling the stats endpoint:
+
+```bash
+curl http://localhost:8000/stats
+{
+  "joinGame": {
+    "gameMaker": {
+      "XVlBzgba": {
+        "params": {
+          "event": "joinGame",
+          "actor": "gameMaker",
+          "payload": "gameid=12345",
+          "labels": {
+            "actor": "gameMaker"
+          },
+          "selector": "actor != gameMaker",
+          "mates": 2
+        },
+        "created_at": "2020-01-09T20:00:44.67685952+03:30"
+      }
+    }
+  }
+}
+```
+
+Finally, lets add the two players:
+
+```bash
+curl "http://localhost:8000/event?event=joinGame&actor=player1&value=v1&mates=2" &
+curl "http://localhost:8000/event?event=joinGame&actor=player2&value=v2&mates=2" &
+```
+
+All three processes (players and the game maker) will receive this response:
+
+```json
+{
+  "payloads": {
+    "gameMaker": "gameid=12345",
+    "player1": "v1",
+    "player2": "v2"
+  }
+}
+```
+
+## I still don't get it...
 
 Suppose we have two programs running concurrently,
 and these processes are required to synchronize on a event EVENT before proceeding.
@@ -87,7 +131,7 @@ The logs of these processes could look like this:
     ----  ---------  ---------
     1     p1.log1    p2.log1
     2                p2.log2
-    3     p1.log2       
+    3     p1.log2
     4     p1.EVENT   p2.log3
     5     p1.log3    p2.log4
     6                p2.EVENT
@@ -101,7 +145,7 @@ We want this EVENT to be synchronized accross the two processes, so, the desired
     ----  ---------  ---------
     1     p1.log1    p2.log1
     2                p2.log2
-    3     p1.log2       
+    3     p1.log2
     4   ┌ p1.EVENT   p2.log3
     5   │            p2.log4
     6   └─────────── p2.EVENT
@@ -109,41 +153,13 @@ We want this EVENT to be synchronized accross the two processes, so, the desired
 
 Note that Process 1 is blocked for 2 time units, i.e., p1.log3 is not executed until p2.EVENT is executed.
 
-## More complex example (skip this if you want)
+## Concepts
 
-Suppose we have a system with two processes running concurrently: a vending machine (VM), and a customer (CUST).
-In [CSP][csp_homepage] notation, they can be described as:
-
-    VM = coin -> choc -> VM
-    CUST = hungry -> coin -> choc -> eat -> CUST
-    SYSTEM = CUST || VM
-
-VM and CUST must synchronize on `coin` and `choc` events.
-Using Netsync, we can write the processes in Bash, e.g. the code for VM might look like this:
-
-```bash
-curl "http://localhost:8000/event?actor=VM&mates=1&event=coin" # VM's 1st request
-curl "http://localhost:8000/event?actor=VM&mates=1&event=choc" # VM's 2nd request
-```
-
-And the code for CUST could look like this:
-
-```bash
-curl "http://localhost:8000/event?actor=CUST&mates=1&event=coin" # CUST's 1st request
-curl "http://localhost:8000/event?actor=CUST&mates=1&event=choc" # CUST's 2nd request
-```
-
-When run concurrently, the log of Netsync will look like this:
-
-```
-┌─ VM:coin            # 'coin' from VM
-│┌ CUST:coin          # 'coin' from CUST
-└└ CUST:coin VM:coin  # 'coin' requests are synced
-
-┌─ VM:choc            # 'choc' from VM
-│┌ CUST:choc          # 'choc' from CUST
-└└ CUST:choc VM:choc  # 'choc' requests are synced
-```
+- Event: An event is used to identify which requests can be matched with each other.
+- Actor: An actor is a client name. It is used as a label to filter who can match who.
+- Mate: A mate is the other side of the match. A match could require have 1, 2, or more mates.
+- Selector: A selector is used in a request to specify the desired requests it wants to match with.
+- Label: Each request has one or several labels which other requests use with their selectors to see if they are interested in a match.
 
 ## Endpoints
 
@@ -176,7 +192,7 @@ curl "http://localhost:8000/event?actor=CUST&mates=1&event=choc&labels=actor%3DC
                                                                                              ^             |
                                                                                              |             |
                                                                                              actor!=CUST   |
-                                                                                                           |  
+                                                                                                           |
                                                                                                            |
                                                                                                            payload=value
 ```
