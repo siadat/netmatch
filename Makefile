@@ -8,7 +8,7 @@ test_python:
 	goreman -f Procfile start
 
 dependencies:
-	go get -v ./...
+	go get -t -v ./...
 
 all:
 	go run main.go
