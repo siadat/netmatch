@@ -146,9 +146,9 @@ We want this EVENT to be synchronized accross the two processes, so, the desired
     1     p1.log1    p2.log1
     2                p2.log2
     3     p1.log2
-    4   ┌ p1.EVENT   p2.log3
+    4   ┌>p1.EVENT   p2.log3
     5   │            p2.log4
-    6   └─────────── p2.EVENT
+    6   └───────────>p2.EVENT
     7     p1.log3    p2.log5
 
 Note that Process 1 is blocked for 2 time units, i.e., p1.log3 is not executed until p2.EVENT is executed.
@@ -261,6 +261,5 @@ output := <-doneChan
 This tool is inspired by the ideas in [CSP][csp_homepage] and Go unbuffered channels.
 While it does provide features that are not available in other tools (e.g., allowing more than two clients to synchronize)
 traditional services are probably better off with async, buffered message queues.
-However, Netsync provides synchronization it the cases where it is required.
 Feel free to let me know how you use Netsync in your project.
-PRs (with tests) and issues are all welcome.
+Tested PRs and issues are all welcome. :)
