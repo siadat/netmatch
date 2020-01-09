@@ -12,15 +12,15 @@ Netsync is a synchronized messaging system.
 It is a tool for synchronizing processes over the network via HTTP requests.
 It also provides a Go API ([Go docs][godoc]) which could be used to synchronize goroutines.
 
-It may be used for matching online players (and an optional game maker) in an online multiplayer game server.
+It may be used for matching online players in an multiplayer game server.
 
 ## What does it do?
 
 One process sends an HTTP request, and it is blocked until N
 other matching processes send N other requests with the same "event" query value.
-The requests might have a *payload* value, which is shared with all requests in
+The requests might have a payload value, which is shared with all requests in
 the responses they eventually receive upon syncing.
-Matching of requests can be limited using *labels* and *selectors*.
+Matching of requests can be limited using labels and selectors.
 
 ## Quick start: sync 2 processes
 
@@ -31,13 +31,13 @@ go install github.com/siadat/netsync/cmd/netsync
 netsync :8000
 ```
 
-Run the following on a terminal:
+Run the following in a terminal:
 
 ```bash
 curl "http://localhost:8000/event?event=e&payload=v1&actor=actor1"
 ```
 
-On another terminal, run:
+In another terminal, run:
 
 ```bash
 curl "http://localhost:8000/event?event=e&payload=v2&actor=actor2"
