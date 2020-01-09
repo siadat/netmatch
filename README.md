@@ -1,5 +1,4 @@
 # syncnet
-
 [![GoDoc](https://godoc.org/github.com/siadat/syncnet?status.svg)][godoc]
 [![Build Status](https://travis-ci.org/siadat/syncnet.svg?branch=master)][travis]
 
