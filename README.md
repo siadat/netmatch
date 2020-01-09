@@ -17,7 +17,7 @@ With that in mind, let the fun begin!
 [csp_homepage]: http://www.usingcsp.com/
 [k8s_labels_and_selectors]: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
 
-## Quick start
+## Quick start: sync 2 processes
 
 Start the server:
 
@@ -48,6 +48,15 @@ Both of these will receive the following JSON response:
 }
 ```
 
+## Example: sync 3 processes
+
+With `mates=2` the request is blocked until 2 other requests are made.
+
+```bash
+curl "http://localhost:8000/event?event=e&payload=v1&actor=a1&mates=2" &
+curl "http://localhost:8000/event?event=e&payload=v2&actor=a2&mates=2" &
+curl "http://localhost:8000/event?event=e&payload=v3&actor=a3&mates=2" &
+```
 
 ## What does it do?
 
