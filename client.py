@@ -10,7 +10,7 @@ mates = int(sys.argv[3])
 while True:
   # actor = "actor%d" % random.randint(0, 1<<20)
   payload = "payload%d" % random.randint(0, 1<<10)
-  url = "http://localhost:8080/event?actor=%s&event=%s&payload=%s&mates=%d" % (actor, event, payload, mates)
+  url = "http://localhost:8000/event?actor=%s&event=%s&payload=%s&mates=%d" % (actor, event, payload, mates)
   print({
       "actor": actor,
       "event": event,

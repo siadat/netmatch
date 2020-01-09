@@ -53,7 +53,31 @@ We want this EVENT to be synchronized accross the two processes, so, the desired
 
 Note that Process 1 is blocked for 2 time units, i.e., p1.log3 is not executed until p2.EVENT is executed.
 
-## Example
+## Simple example
+
+Run the following on a terminal:
+
+```bash
+curl "http://localhost:8000/event?event=e&payload=v1&actor=VM"
+```
+
+On another terminal, run:
+
+```bash
+curl "http://localhost:8000/event?event=e&payload=v2&actor=CUST"
+```
+
+Both of these will receive the following JSON response:
+```json
+{
+  "payloads": {
+    "CUST": "v2",
+    "VM": "v1"
+  }
+}
+```
+
+## More complex example
 
 Suppose we have a system with two processes running concurrently: a vending machine (VM), and a customer (CUST).
 In [CSP][csp_homepage] notation, they can be described as:
@@ -106,20 +130,25 @@ This endpoint can be used to monitor the current pending/blocking requests waiti
 
 An example of a request with all options set:
 
-    curl "http://localhost:8000/event?actor=CUST&mates=1&event=choc&labels=actor%3DCUST&selector=actor!%3DCUST"
-                                      ^          ^       ^          ^                   ^
-                                      |          |       |          |                   |
-                                      actor=CUST |       |          |                   |
-                                                 mates=1 |          |                   |
-                                                         event=choc |                   |
-                                                                    labels=actor%3DCUST |
-                                                                           ^            |
-                                                                           |            |
-                                                                           actor=CUST   |
-                                                                                        selector=actor!%3DCUST
-                                                                                                 ^
-                                                                                                 |
-                                                                                                 actor!=CUST
+```bash
+curl "http://localhost:8000/event?actor=CUST&mates=1&event=choc&labels=actor%3DCUST&selector=actor!%3DCUST&payload=value"
+                                  ^          ^       ^          ^                   ^                      ^
+                                  |          |       |          |                   |                      |
+                                  actor=CUST |       |          |                   |                      |
+                                             mates=1 |          |                   |                      |
+                                                     event=choc |                   |                      |
+                                                                labels=actor%3DCUST |                      |
+                                                                       ^            |                      |
+                                                                       |            |                      |
+                                                                       actor=CUST   |                      |
+                                                                                    selector=actor!%3DCUST |
+                                                                                             ^             |
+                                                                                             |             |
+                                                                                             actor!=CUST   |
+                                                                                                           |  
+                                                                                                           |
+                                                                                                           payload=value
+```
 
 ### event=
 **Required** The event key. Identical events are synchronized. See labels and
@@ -127,6 +156,17 @@ selectors for more fine-grained control over synchronization.
 
 ### actor=
 **Required** The name of the process issuing the request.
+
+### payload=
+The data that are shared with every mate/participant when a sync match is made.
+For example, if actor1's payload is payload1 and actor2's payload is payload2, both actors will receive the following JSON object when they sync together:
+
+    {
+      "payloads": {
+        "acto1":"payload1",
+        "acto2":"payload2"
+      }
+    }
 
 ### mates=
 The value of `mates` indicates the number of other processes
