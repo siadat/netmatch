@@ -12,7 +12,7 @@ Netsync is a synchronized messaging system.
 It is a tool for synchronizing processes over the network via HTTP requests.
 It also provides a Go API ([Go docs][godoc]) which could be used to synchronize goroutines.
 
-It may be used for matching online players in an multiplayer game server.
+It may be used for matching online players in a multiplayer game server.
 
 ## What does it do?
 
