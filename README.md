@@ -18,8 +18,35 @@ With that in mind, let the fun begin!
 
 ## Quick start
 
-    go install github.com/siadat/syncnet/cmd/syncnet
-    syncnet :8000
+Start the server:
+
+```bash
+go install github.com/siadat/syncnet/cmd/syncnet
+syncnet :8000
+```
+
+Run the following on a terminal:
+
+```bash
+curl "http://localhost:8000/event?event=e&payload=v1&actor=VM"
+```
+
+On another terminal, run:
+
+```bash
+curl "http://localhost:8000/event?event=e&payload=v2&actor=CUST"
+```
+
+Both of these will receive the following JSON response:
+```json
+{
+  "payloads": {
+    "CUST": "v2",
+    "VM": "v1"
+  }
+}
+```
+
 
 ## What does it do?
 
@@ -53,38 +80,13 @@ We want this EVENT to be synchronized accross the two processes, so, the desired
 
 Note that Process 1 is blocked for 2 time units, i.e., p1.log3 is not executed until p2.EVENT is executed.
 
-## Simple example
-
-Run the following on a terminal:
-
-```bash
-curl "http://localhost:8000/event?event=e&payload=v1&actor=VM"
-```
-
-On another terminal, run:
-
-```bash
-curl "http://localhost:8000/event?event=e&payload=v2&actor=CUST"
-```
-
-Both of these will receive the following JSON response:
-```json
-{
-  "payloads": {
-    "CUST": "v2",
-    "VM": "v1"
-  }
-}
-```
-
-## More complex example
+## More complex example (skip this if you want)
 
 Suppose we have a system with two processes running concurrently: a vending machine (VM), and a customer (CUST).
 In [CSP][csp_homepage] notation, they can be described as:
 
     VM = coin -> choc -> VM
     CUST = hungry -> coin -> choc -> eat -> CUST
-
     SYSTEM = CUST || VM
 
 VM and CUST must synchronize on `coin` and `choc` events.
@@ -190,17 +192,21 @@ They are a comma separated list of `key1=value1,key2=value2` items.
 
 The default label is `actor=$MyActorName`
 
-## Example of using the Go API
+## Using the Go API
 
 ```go
 sn := syncnet.NewSyncnet()
 defer sn.Close()
 
-doneChan, _ := sn.Send(syncnet.Params{
+doneChan, err := sn.Send(syncnet.Params{
   Actor: "CUST",
   Event: "choc",
   Payload: "Please give me a chocolate",
 })
+
+if err != nil {
+  panic(err)
+}
 
 output := <-doneChan
 ```
