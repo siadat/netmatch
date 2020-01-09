@@ -9,8 +9,8 @@
 [k8s_labels_and_selectors]: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
 
 Netsync is a synchronized messaging system.
-It is a low-level tool for synchronoizing processes over network via HTTP requests.
-It also provides a Go API ([Go docs][godoc]) which could be used to synchronize Go routines.
+It is a tool for synchronoizing processes over network via HTTP requests.
+It also provides a Go API ([Go docs][godoc]) which could be used to synchronize goroutines.
 
 It may be used for matching online players (and an optional game maker) in an online multiplayer game server.
 
@@ -135,7 +135,7 @@ The logs of these processes could look like this:
     6                p2.EVENT
     7                p2.log5
 
-Maybe Process 1 needs to read a file that should be first prepared by Process 2 before Process 1 can continue its execution.
+Perhaps Process 1 needs to read a file that is created by Process 2, so Process 1 must wait until that file is ready.
 In this case, EVENT is "file is ready".
 We want this EVENT to be synchronized accross the two processes, so, the desired log should look like:
 
@@ -149,7 +149,7 @@ We want this EVENT to be synchronized accross the two processes, so, the desired
     6   └───────────>p2.EVENT
     7     p1.log3    p2.log5
 
-Note that Process 1 is blocked for 2 time units, i.e., p1.log3 is not executed until p2.EVENT is executed.
+Process 1 is blocked for 2 time units, i.e., p1.log3 is not executed until p2.EVENT is executed.
 
 ## Concepts
 
@@ -225,7 +225,7 @@ The default value is 1.
 Selectors filter what events can or cannot be used for
 synchronizing. E.g., an actor (a Netsync client) might only want to sync with
 events of a particular actor.
-The formatting is identical with [Kubernetes Labels and Selectors][k8s_labels_and_selectors].
+The formatting is identical to that of the [Labels and Selectors][k8s_labels_and_selectors] of Kubernetes.
 
 The default selector is `actor!=$MyActorName`, i.e., don't match me with another request from myself.
 
