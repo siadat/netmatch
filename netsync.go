@@ -627,7 +627,7 @@ func check(err error) {
 }
 
 func mustMarshalJson(v interface{}) []byte {
-	byts, err := json.Marshal(v)
+	byts, err := json.MarshalIndent(v, "", " ")
 	check(err)
 	return byts
 }
