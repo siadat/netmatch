@@ -1,39 +1,39 @@
-# Netsync
+# Netmatch
 
-[![GoDoc](https://godoc.org/github.com/siadat/netsync?status.svg)][godoc]
-[![Build Status](https://travis-ci.org/siadat/netsync.svg?branch=master)][travis]
-[![Go Report Card](https://goreportcard.com/badge/github.com/siadat/netsync)][goreportcard]
+[![GoDoc](https://godoc.org/github.com/siadat/netmatch?status.svg)][godoc]
+[![Build Status](https://travis-ci.org/siadat/netmatch.svg?branch=master)][travis]
+[![Go Report Card](https://goreportcard.com/badge/github.com/siadat/netmatch)][goreportcard]
 
-[godoc]:  https://godoc.org/github.com/siadat/netsync
-[travis]: https://travis-ci.org/siadat/netsync
-[goreportcard]: https://goreportcard.com/report/github.com/siadat/netsync
+[godoc]:  https://godoc.org/github.com/siadat/netmatch
+[travis]: https://travis-ci.org/siadat/netmatch
+[goreportcard]: https://goreportcard.com/report/github.com/siadat/netmatch
 [csp_homepage]: http://www.usingcsp.com/
 [k8s_labels_and_selectors]: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
 
-- **What is Netsync?**
+- **What is Netmatch?**
   It is a tool for *matching* and *synchronizing* HTTP requests.
 - **What is synchronizing?**
   Synchronizing two requests means that the first one is blocked until the second one arrives as well.
 - **What is matching?**
   Only matching requests are synchronized. Matching two requests means the selectors of one matches the labels of the other.
-- **What is it used for?**
-  It could be used for matching online players in a multiplayer game server.
-  In general, it could be used in a transaction when it is requires that several
-  processes to do something together or don't do anything at all.
 - **Give me an example.**
   One process sends an HTTP request, and it is blocked until N
   other matching processes send N other requests with the same key.
   The requests might have a payload value, which is shared with all requests in
   the responses they eventually receive upon matching.
   Matching of requests can be limited using labels and selectors.
+- **What is it used for?**
+  It could be used for matching online players in a multiplayer game server.
+  In general, it could be used in a transaction when it is requires that several
+  processes to do something or nothing at all.
 
 ## Quick start (sync two processes)
 
 Start the server:
 
 ```bash
-go install github.com/siadat/netsync/cmd/netsync
-netsync :8000
+go install github.com/siadat/netmatch/cmd/netmatch
+netmatch :8000
 ```
 
 In terminal 1:
@@ -224,7 +224,7 @@ and more means 4 or more requests are required to be present.
 The default value is 1.
 
 ### selector
-Selectors filter what requests do or do not match with a request. E.g., an actor (a Netsync client) might only want to match with the requests of a particular actor.
+Selectors filter what requests do or do not match with a request. E.g., an actor (a Netmatch client) might only want to match with the requests of a particular actor.
 The formatting is identical to that of the [Labels and Selectors][k8s_labels_and_selectors] of Kubernetes.
 
 The default selector is `actor != $MyActorName`, i.e., don't match me with another request from myself.
@@ -238,10 +238,10 @@ The default label is `actor = $MyActorName`
 ## Using the Go API
 
 ```go
-ns := netsync.NewNetsync()
-defer ns.Close()
+nm := netmatch.NewNetmatch()
+defer nm.Close()
 
-readyChan, err := ns.Match(netsync.Params{
+readyChan, err := nm.Match(netmatch.Params{
   Actor: "player1",
   Key: "joinGame",
   Count: 1,
@@ -273,8 +273,8 @@ Syncnet behaves similar to a Go unbuffered channel, however, there are differenc
   Also, each request could ask for a different number of matching requests, by setting the `count` param.
 - Go channels provide no filtering of the messages for receiving goroutines.
   Syncnet filters what requests match your request using labels and selectors.
-- Netsync is a service that can be used to handle requests coming from processes running on different servers.
-  Netsync also provides a Go API ([Go docs][godoc]) which could be used to synchronize goroutines.
+- Netmatch is a service that can be used to handle requests coming from processes running on different servers.
+  Netmatch also provides a Go API ([Go docs][godoc]) which could be used to synchronize goroutines.
 
 ## Background
 

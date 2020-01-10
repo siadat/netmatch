@@ -1,4 +1,4 @@
-package netsync_test
+package netmatch_test
 
 import (
 	"context"
@@ -13,11 +13,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/siadat/netsync"
+	"github.com/siadat/netmatch"
 	"github.com/stretchr/testify/require"
 )
 
-func paramsToURL(p netsync.Params) string {
+func paramsToURL(p netmatch.Params) string {
 	labels := make([]string, 0, len(p.Labels))
 	for k, v := range p.Labels {
 		labels = append(labels, strings.Join([]string{k, v}, "="))
@@ -35,7 +35,7 @@ func paramsToURL(p netsync.Params) string {
 func TestBasic(t *testing.T) {
 	t.Parallel()
 
-	requests := []netsync.Params{
+	requests := []netmatch.Params{
 		{
 			Key:     "e",
 			Actor:   "a1",
@@ -50,16 +50,16 @@ func TestBasic(t *testing.T) {
 		},
 	}
 
-	ns := netsync.NewNetsync()
-	defer ns.Close()
+	nm := netmatch.NewNetmatch()
+	defer nm.Close()
 
 	wg := sync.WaitGroup{}
 	for _, p := range requests {
 		wg.Add(1)
-		go func(p netsync.Params) {
+		go func(p netmatch.Params) {
 			defer wg.Done()
 
-			ch, err := ns.Match(p)
+			ch, err := nm.Match(p)
 			require.NoError(t, err)
 
 			outValue := <-ch
@@ -76,7 +76,7 @@ func TestBasicTriplet(t *testing.T) {
 	t.Parallel()
 
 	ctx, _ := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	requests := []netsync.Params{
+	requests := []netmatch.Params{
 		{
 			Key:     "e",
 			Actor:   "a1",
@@ -100,16 +100,16 @@ func TestBasicTriplet(t *testing.T) {
 		},
 	}
 
-	ns := netsync.NewNetsync()
-	defer ns.Close()
+	nm := netmatch.NewNetmatch()
+	defer nm.Close()
 
 	wg := sync.WaitGroup{}
 	for _, p := range requests {
 		wg.Add(1)
-		go func(p netsync.Params) {
+		go func(p netmatch.Params) {
 			defer wg.Done()
 
-			ch, err := ns.Match(p)
+			ch, err := nm.Match(p)
 			require.NoError(t, err)
 
 			select {
@@ -129,13 +129,13 @@ func TestBasicTriplet(t *testing.T) {
 func TestHttpBasic(t *testing.T) {
 	t.Parallel()
 
-	ns := netsync.NewNetsync()
-	defer ns.Close()
+	nm := netmatch.NewNetmatch()
+	defer nm.Close()
 
-	ts := httptest.NewServer(ns.NewHandler())
+	ts := httptest.NewServer(nm.NewHandler())
 	defer ts.Close()
 
-	requests := []netsync.Params{
+	requests := []netmatch.Params{
 		{
 			Key:     "e",
 			Actor:   "a1",
@@ -152,7 +152,7 @@ func TestHttpBasic(t *testing.T) {
 	wg := sync.WaitGroup{}
 	for _, p := range requests {
 		wg.Add(1)
-		go func(p netsync.Params) {
+		go func(p netmatch.Params) {
 			defer wg.Done()
 
 			resp, err := client.Get(ts.URL + paramsToURL(p))
@@ -164,7 +164,7 @@ func TestHttpBasic(t *testing.T) {
 			require.NoError(t, err)
 			resp.Body.Close()
 
-			outValue := netsync.OutValue{}
+			outValue := netmatch.OutValue{}
 			err = json.Unmarshal(body, &outValue)
 			require.NoError(t, err)
 
@@ -179,13 +179,13 @@ func TestHttpBasic(t *testing.T) {
 func TestHttpMustBlock(t *testing.T) {
 	t.Parallel()
 
-	ns := netsync.NewNetsync()
-	defer ns.Close()
+	nm := netmatch.NewNetmatch()
+	defer nm.Close()
 
-	ts := httptest.NewServer(ns.NewHandler())
+	ts := httptest.NewServer(nm.NewHandler())
 	defer ts.Close()
 
-	requests := []netsync.Params{
+	requests := []netmatch.Params{
 		{
 			Key:     "e",
 			Actor:   "a", // same actor
@@ -202,7 +202,7 @@ func TestHttpMustBlock(t *testing.T) {
 	wg := sync.WaitGroup{}
 	for _, p := range requests {
 		wg.Add(1)
-		go func(p netsync.Params) {
+		go func(p netmatch.Params) {
 			defer wg.Done()
 
 			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
@@ -222,19 +222,19 @@ func TestHttpMustBlock(t *testing.T) {
 func TestHttpMustBlockBecauseOfSelector(t *testing.T) {
 	t.Parallel()
 
-	ns := netsync.NewNetsync()
-	defer ns.Close()
+	nm := netmatch.NewNetmatch()
+	defer nm.Close()
 
-	ts := httptest.NewServer(ns.NewHandler())
+	ts := httptest.NewServer(nm.NewHandler())
 	defer ts.Close()
 
 	testCases := []struct {
 		wantBlock bool
-		requests  []netsync.Params
+		requests  []netmatch.Params
 	}{
 		{
 			wantBlock: true,
-			requests: []netsync.Params{
+			requests: []netmatch.Params{
 				{
 					Key:     "e",
 					Actor:   "a1",
@@ -253,7 +253,7 @@ func TestHttpMustBlockBecauseOfSelector(t *testing.T) {
 		},
 		{
 			wantBlock: false,
-			requests: []netsync.Params{
+			requests: []netmatch.Params{
 				{
 					Key:     "e",
 					Actor:   "a1",
@@ -282,7 +282,7 @@ func TestHttpMustBlockBecauseOfSelector(t *testing.T) {
 			// we can test if a1's selector is applied as well as a2's
 			// selector
 			time.Sleep(50 * time.Millisecond)
-			go func(p netsync.Params) {
+			go func(p netmatch.Params) {
 				defer wg.Done()
 
 				if tt.wantBlock {
@@ -296,7 +296,7 @@ func TestHttpMustBlockBecauseOfSelector(t *testing.T) {
 					require.Error(t, err)
 					require.Error(t, ctx.Err())
 				} else {
-					ch, err := ns.Match(p)
+					ch, err := nm.Match(p)
 					require.NoError(t, err)
 
 					outValue := <-ch
@@ -316,11 +316,11 @@ func TestCount(t *testing.T) {
 
 	testCases := []struct {
 		wantBlock bool
-		requests  []netsync.Params
+		requests  []netmatch.Params
 	}{
 		{
 			wantBlock: false,
-			requests: []netsync.Params{
+			requests: []netmatch.Params{
 				{
 					Key:     "e",
 					Actor:   "a1",
@@ -343,7 +343,7 @@ func TestCount(t *testing.T) {
 		},
 		{
 			wantBlock: true,
-			requests: []netsync.Params{
+			requests: []netmatch.Params{
 				{
 					Key:     "e",
 					Actor:   "a1",
@@ -360,7 +360,7 @@ func TestCount(t *testing.T) {
 		},
 		{
 			wantBlock: false,
-			requests: []netsync.Params{
+			requests: []netmatch.Params{
 				{
 					Key:     "e",
 					Actor:   "a1",
@@ -377,7 +377,7 @@ func TestCount(t *testing.T) {
 		},
 		{
 			wantBlock: false,
-			requests: []netsync.Params{
+			requests: []netmatch.Params{
 				{
 					Key:     "e",
 					Actor:   "a1",
@@ -391,7 +391,7 @@ func TestCount(t *testing.T) {
 	wg := sync.WaitGroup{}
 	for _, tt := range testCases {
 		func() {
-			ns := netsync.NewNetsync()
+			nm := netmatch.NewNetmatch()
 			for i, p := range tt.requests {
 				wg.Add(1)
 
@@ -399,7 +399,7 @@ func TestCount(t *testing.T) {
 				// we can test if a1's selector is applied as well as a2's
 				// selector
 				time.Sleep(50 * time.Millisecond)
-				go func(i int, p netsync.Params) {
+				go func(i int, p netmatch.Params) {
 					defer wg.Done()
 
 					if tt.wantBlock {
@@ -408,7 +408,7 @@ func TestCount(t *testing.T) {
 
 						p.Context = ctx
 
-						ch, err := ns.Match(p)
+						ch, err := nm.Match(p)
 						require.NoError(t, err)
 						select {
 						case <-ch:
@@ -417,7 +417,7 @@ func TestCount(t *testing.T) {
 
 						require.Error(t, p.Context.Err())
 					} else {
-						ch, err := ns.Match(p)
+						ch, err := nm.Match(p)
 						require.NoError(t, err)
 
 						outValue := <-ch
@@ -429,7 +429,7 @@ func TestCount(t *testing.T) {
 				}(i, p)
 			}
 			wg.Wait()
-			ns.Close()
+			nm.Close()
 		}()
 	}
 }

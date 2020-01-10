@@ -1,4 +1,4 @@
-package netsync
+package netmatch
 
 import (
 	"bytes"
@@ -86,9 +86,9 @@ type graphLineStruct struct {
 	occupied bool
 }
 
-// Netsync is the main struct containing everything needed to run a netsync
+// Netmatch is the main struct containing everything needed to run a netmatch
 // server.
-type Netsync struct {
+type Netmatch struct {
 	// LogFormat is the format of logs. Possible values are "json" and "graph" (default).
 	LogFormat string
 
@@ -106,75 +106,75 @@ type Netsync struct {
 // Close tears down internal goroutines to free up resources. It
 // blocks until all internal goroutines are stopped, which should
 // happen immediately.
-func (ns *Netsync) Close() {
-	close(ns.terminateChan)
-	ns.terminateWG.Wait()
+func (nm *Netmatch) Close() {
+	close(nm.terminateChan)
+	nm.terminateWG.Wait()
 }
 
-// NewNetsync initializes the server and returns a Netsync struct.
-func NewNetsync() *Netsync {
-	ns := Netsync{}
+// NewNetmatch initializes the server and returns a Netmatch struct.
+func NewNetmatch() *Netmatch {
+	nm := Netmatch{}
 
 	cleanChan := make(chan string)
 
-	ns.LogFormat = "graph"
-	ns.graphlineMu = &sync.Mutex{}
+	nm.LogFormat = "graph"
+	nm.graphlineMu = &sync.Mutex{}
 
-	ns.terminateChan = make(chan struct{})
-	ns.terminateWG = sync.WaitGroup{}
-	ns.matchReqChan = make(chan reqStruct)
-	ns.keyToActorToReqMap = keyToActorToReqStruct{
+	nm.terminateChan = make(chan struct{})
+	nm.terminateWG = sync.WaitGroup{}
+	nm.matchReqChan = make(chan reqStruct)
+	nm.keyToActorToReqMap = keyToActorToReqStruct{
 		Map: make(map[string]map[string]map[string]reqStruct),
 		mu:  &sync.RWMutex{},
 	}
 
-	ns.terminateWG.Add(1)
+	nm.terminateWG.Add(1)
 	go func() {
-		defer ns.terminateWG.Done()
+		defer nm.terminateWG.Done()
 		for {
 			select {
-			case <-ns.terminateChan:
+			case <-nm.terminateChan:
 				return
 			case completedRID := <-cleanChan:
-				cleanMap(ns.keyToActorToReqMap, completedRID)
+				cleanMap(nm.keyToActorToReqMap, completedRID)
 			}
 		}
 	}()
 
-	ns.terminateWG.Add(1)
+	nm.terminateWG.Add(1)
 	go func() {
-		defer ns.terminateWG.Done()
+		defer nm.terminateWG.Done()
 		for {
 			var matchReq reqStruct
 			select {
-			case <-ns.terminateChan:
+			case <-nm.terminateChan:
 				return
-			case matchReq = <-ns.matchReqChan:
+			case matchReq = <-nm.matchReqChan:
 			}
 
-			atomic.AddInt32(&ns.pendingCounter, 1)
-			fmt.Println(ns.newLog([]reqStruct{matchReq}, "+", ""))
-			ns.terminateWG.Add(1)
+			atomic.AddInt32(&nm.pendingCounter, 1)
+			fmt.Println(nm.newLog([]reqStruct{matchReq}, "+", ""))
+			nm.terminateWG.Add(1)
 			go func(matchReq reqStruct) {
 
 				matchID := ""
 				defer func() {
-					atomic.AddInt32(&ns.pendingCounter, -1)
-					if !(ns.LogFormat == "graph" && matchID != "") {
-						fmt.Println(ns.newLog([]reqStruct{matchReq}, "-", matchID))
+					atomic.AddInt32(&nm.pendingCounter, -1)
+					if !(nm.LogFormat == "graph" && matchID != "") {
+						fmt.Println(nm.newLog([]reqStruct{matchReq}, "-", matchID))
 					}
-					ns.terminateWG.Done()
+					nm.terminateWG.Done()
 				}()
 
 				select {
-				case <-ns.terminateChan:
+				case <-nm.terminateChan:
 					return
 				case matchID = <-matchReq.MatchChan:
 				case <-matchReq.Params.Context.Done():
 				}
 
 				select {
-				case <-ns.terminateChan:
+				case <-nm.terminateChan:
 					return
 				case <-matchReq.Params.Context.Done():
 					// checking context again, even though
@@ -194,10 +194,10 @@ func NewNetsync() *Netsync {
 				}
 
 				maxCount := matchReq.Params.Count
-				ns.keyToActorToReqMap.mu.RLock()
-				defer ns.keyToActorToReqMap.mu.RUnlock()
+				nm.keyToActorToReqMap.mu.RLock()
+				defer nm.keyToActorToReqMap.mu.RUnlock()
 
-				if actorToRequestMap, ok := ns.keyToActorToReqMap.Map[matchReq.Params.Key]; ok {
+				if actorToRequestMap, ok := nm.keyToActorToReqMap.Map[matchReq.Params.Key]; ok {
 					for _, actorPendingReqs := range actorToRequestMap {
 
 						for _, pendingReq := range actorPendingReqs {
@@ -237,7 +237,7 @@ func NewNetsync() *Netsync {
 				}
 
 				matchID := strings.Join(rids, "+")
-				fmt.Println(ns.newLog(requests, "m", matchID))
+				fmt.Println(nm.newLog(requests, "m", matchID))
 
 				for _, req := range requests {
 					select {
@@ -255,27 +255,27 @@ func NewNetsync() *Netsync {
 			}
 
 			// if we are here, it means no other actor was
-			// listening, or ns.keyToActorToReqMap has not
+			// listening, or nm.keyToActorToReqMap has not
 			// cleaned up cancelled or done requests yet.
 
 			func() {
-				ns.keyToActorToReqMap.mu.Lock()
-				defer ns.keyToActorToReqMap.mu.Unlock()
+				nm.keyToActorToReqMap.mu.Lock()
+				defer nm.keyToActorToReqMap.mu.Unlock()
 
-				if _, ok := ns.keyToActorToReqMap.Map[matchReq.Params.Key]; !ok {
-					ns.keyToActorToReqMap.Map[matchReq.Params.Key] = map[string]map[string]reqStruct{}
+				if _, ok := nm.keyToActorToReqMap.Map[matchReq.Params.Key]; !ok {
+					nm.keyToActorToReqMap.Map[matchReq.Params.Key] = map[string]map[string]reqStruct{}
 				}
-				if _, ok := ns.keyToActorToReqMap.Map[matchReq.Params.Key][matchReq.Params.Actor]; !ok {
-					ns.keyToActorToReqMap.Map[matchReq.Params.Key][matchReq.Params.Actor] = map[string]reqStruct{}
+				if _, ok := nm.keyToActorToReqMap.Map[matchReq.Params.Key][matchReq.Params.Actor]; !ok {
+					nm.keyToActorToReqMap.Map[matchReq.Params.Key][matchReq.Params.Actor] = map[string]reqStruct{}
 				}
-				ns.keyToActorToReqMap.Map[matchReq.Params.Key][matchReq.Params.Actor][matchReq.RID] = matchReq
+				nm.keyToActorToReqMap.Map[matchReq.Params.Key][matchReq.Params.Actor][matchReq.RID] = matchReq
 
-				ns.terminateWG.Add(1)
+				nm.terminateWG.Add(1)
 				go func(matchReq reqStruct) {
-					defer ns.terminateWG.Done()
+					defer nm.terminateWG.Done()
 
 					select {
-					case <-ns.terminateChan:
+					case <-nm.terminateChan:
 						return
 					case <-matchReq.Params.Context.Done():
 						cleanChan <- matchReq.RID
@@ -286,11 +286,11 @@ func NewNetsync() *Netsync {
 		}
 	}()
 
-	return &ns
+	return &nm
 }
 
-func (ns *Netsync) newLog(matchReqs []reqStruct, msg string, matchID string) string {
-	switch ns.LogFormat {
+func (nm *Netmatch) newLog(matchReqs []reqStruct, msg string, matchID string) string {
+	switch nm.LogFormat {
 	case "json":
 		for _, matchReq := range matchReqs {
 			return string(mustMarshalJSON(logStruct{
@@ -301,7 +301,7 @@ func (ns *Netsync) newLog(matchReqs []reqStruct, msg string, matchID string) str
 				Key:      matchReq.Params.Key,
 				Count:    matchReq.Params.Count,
 				MatchID:  matchID,
-				Pending:  atomic.LoadInt32(&ns.pendingCounter),
+				Pending:  atomic.LoadInt32(&nm.pendingCounter),
 				Msg:      msg,
 				Time:     time.Now(),
 				Payload:  matchReq.Params.Payload,
@@ -309,19 +309,19 @@ func (ns *Netsync) newLog(matchReqs []reqStruct, msg string, matchID string) str
 			}))
 		}
 	case "graph":
-		ns.graphlineMu.Lock()
-		defer ns.graphlineMu.Unlock()
+		nm.graphlineMu.Lock()
+		defer nm.graphlineMu.Unlock()
 
 		StrLine := "│"
 		StrStart := "┌"
 		StdEnd := "└"
 		StrCancel := "┴"
 
-		for i := range ns.graphline {
-			if ns.graphline[i].occupied {
-				ns.graphline[i].str = StrLine
+		for i := range nm.graphline {
+			if nm.graphline[i].occupied {
+				nm.graphline[i].str = StrLine
 			} else {
-				ns.graphline[i].str = " "
+				nm.graphline[i].str = " "
 			}
 		}
 
@@ -329,17 +329,17 @@ func (ns *Netsync) newLog(matchReqs []reqStruct, msg string, matchID string) str
 		case "+":
 			for _, matchReq := range matchReqs {
 				vacantFound := false
-				for i := range ns.graphline {
-					if !ns.graphline[i].occupied {
-						ns.graphline[i].rid = matchReq.RID
-						ns.graphline[i].str = StrStart
-						ns.graphline[i].occupied = true
+				for i := range nm.graphline {
+					if !nm.graphline[i].occupied {
+						nm.graphline[i].rid = matchReq.RID
+						nm.graphline[i].str = StrStart
+						nm.graphline[i].occupied = true
 						vacantFound = true
 						break
 					}
 				}
 				if !vacantFound {
-					ns.graphline = append(ns.graphline, graphLineStruct{
+					nm.graphline = append(nm.graphline, graphLineStruct{
 						rid:      matchReq.RID,
 						str:      StrStart,
 						occupied: true,
@@ -354,11 +354,11 @@ func (ns *Netsync) newLog(matchReqs []reqStruct, msg string, matchID string) str
 				chr = StdEnd
 			}
 			for _, matchReq := range matchReqs {
-				for i := range ns.graphline {
-					if matchReq.RID == ns.graphline[i].rid {
-						ns.graphline[i].rid = matchReq.RID
-						ns.graphline[i].str = chr
-						ns.graphline[i].occupied = false
+				for i := range nm.graphline {
+					if matchReq.RID == nm.graphline[i].rid {
+						nm.graphline[i].rid = matchReq.RID
+						nm.graphline[i].str = chr
+						nm.graphline[i].occupied = false
 						break
 					}
 				}
@@ -373,7 +373,7 @@ func (ns *Netsync) newLog(matchReqs []reqStruct, msg string, matchID string) str
 			buf = bytes.NewBufferString("")
 		}
 
-		for _, gl := range ns.graphline {
+		for _, gl := range nm.graphline {
 			buf.WriteString(fmt.Sprintf("%s", gl.str))
 		}
 
@@ -388,13 +388,13 @@ func (ns *Netsync) newLog(matchReqs []reqStruct, msg string, matchID string) str
 		}
 
 		for {
-			if len(ns.graphline) == 0 {
+			if len(nm.graphline) == 0 {
 				break
 			}
 
-			if ns.graphline[len(ns.graphline)-1].occupied == false {
+			if nm.graphline[len(nm.graphline)-1].occupied == false {
 				// if it is the last item, shrink the slice
-				ns.graphline = ns.graphline[:len(ns.graphline)-1]
+				nm.graphline = nm.graphline[:len(nm.graphline)-1]
 			} else {
 				break
 			}
@@ -403,21 +403,21 @@ func (ns *Netsync) newLog(matchReqs []reqStruct, msg string, matchID string) str
 		return buf.String()
 	}
 
-	return fmt.Sprintf("unknown format %q", ns.LogFormat)
+	return fmt.Sprintf("unknown format %q", nm.LogFormat)
 }
 
 // Match will dispatch a request with the given params.
 // This function will not block. The returned channel should be used to await
 // matching of this request.
 //
-//     doneChan, err := ns.Match(netsync.Params{
+//     doneChan, err := nm.Match(netmatch.Params{
 //       Actor: "CUST",
 //       Key: "choc",
 //       Payload: "Please give me a chocolate",
 //     })
 //
 //     output := <-doneChan // this will block until match is made
-func (ns *Netsync) Match(params Params) (chan OutValue, error) {
+func (nm *Netmatch) Match(params Params) (chan OutValue, error) {
 
 	if params.Key == "" {
 		return nil, fmt.Errorf("empty key")
@@ -450,7 +450,7 @@ func (ns *Netsync) Match(params Params) (chan OutValue, error) {
 
 	// fmt.Printf("params = %+v\n", params)
 	readyChan := make(chan OutValue)
-	ns.matchReqChan <- reqStruct{
+	nm.matchReqChan <- reqStruct{
 		RID:       randStringRunes(8),
 		Params:    params,
 		Selector:  lq,
@@ -463,16 +463,16 @@ func (ns *Netsync) Match(params Params) (chan OutValue, error) {
 	return readyChan, nil
 }
 
-// NewHandler is used for creating an HTTP handler for the Netsync server.
-func (ns *Netsync) NewHandler() http.Handler {
+// NewHandler is used for creating an HTTP handler for the Netmatch server.
+func (nm *Netmatch) NewHandler() http.Handler {
 	serveMux := http.NewServeMux()
 
 	serveMux.HandleFunc("/stats", func(rw http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
-		ns.keyToActorToReqMap.mu.RLock()
-		defer ns.keyToActorToReqMap.mu.RUnlock()
+		nm.keyToActorToReqMap.mu.RLock()
+		defer nm.keyToActorToReqMap.mu.RUnlock()
 
-		rw.Write(mustMarshalJSON(ns.keyToActorToReqMap.Map))
+		rw.Write(mustMarshalJSON(nm.keyToActorToReqMap.Map))
 		rw.Write([]byte("\n"))
 	})
 
@@ -585,7 +585,7 @@ func (ns *Netsync) NewHandler() http.Handler {
 		}
 
 		readyChan := make(chan OutValue)
-		ns.matchReqChan <- reqStruct{
+		nm.matchReqChan <- reqStruct{
 			RID:       randStringRunes(8),
 			Params:    params,
 			OutChan:   readyChan,

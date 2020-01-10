@@ -5,14 +5,14 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/siadat/netsync"
+	"github.com/siadat/netmatch"
 )
 
 func main() {
 	var addr = os.Args[1]
 	fmt.Printf("Listening on %s\n", addr)
 
-	err := http.ListenAndServe(addr, netsync.NewNetsync().NewHandler())
+	err := http.ListenAndServe(addr, netmatch.NewNetmatch().NewHandler())
 	if err != nil {
 		panic(err)
 	}
