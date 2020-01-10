@@ -350,7 +350,7 @@ func (nm *Netmatch) newLog(matchReqs []reqStruct, msg string, matchID string) st
 
 		var buf *bytes.Buffer
 
-		if false {
+		if true {
 			buf = bytes.NewBufferString(time.Now().Format(time.RFC3339) + " ")
 		} else {
 			buf = bytes.NewBufferString("")

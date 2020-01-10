@@ -2,20 +2,28 @@ import requests
 import random
 import time
 import sys
+import urllib
 
-actor = sys.argv[1]
-key = sys.argv[2]
-count = int(sys.argv[3])
+key = sys.argv[1]
+labels = sys.argv[2]
+selector = sys.argv[3]
+count = int(sys.argv[4])
 
 while True:
-  # actor = "actor%d" % random.randint(0, 1<<20)
   payload = "payload%d" % random.randint(0, 1<<10)
-  url = "http://localhost:8000/match?actor=%s&key=%s&payload=%s&count=%d" % (actor, key, payload, count)
-  print({
-      "key": key,
-      "actor": actor,
-      "count": count,
-      })
+  
+  url = "http://localhost:8000/match?labels=%s&selector=%s&key=%s&payload=%s&count=%d" % (
+          urllib.quote(labels),
+          urllib.quote(selector),
+          urllib.quote(key),
+          urllib.quote(payload),
+          count,
+          )
+  # print({
+  #     "key": key,
+  #     "labels": labels,
+  #     "count": count,
+  #     })
 
   
   try:
@@ -27,5 +35,5 @@ while True:
     continue
 
 
-  print(resp.text)
+  # print(resp.text)
   # time.sleep(1)
