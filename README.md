@@ -39,22 +39,29 @@ netmatch :8000
 In terminal 1:
 
 ```bash
-echo '{key: e, payload: p1, actor: actor1}' | curl -d@- localhost:8000/match?input=yaml
+echo '{key: e, payload: p1, selector: "name != actor1", labels: {name: actor1}}' | curl -d@- localhost:8000/match?input=yaml
 ```
 
 In terminal 2:
 
 ```bash
-echo '{key: e, payload: p2, actor: actor2}' | curl -d@- localhost:8000/match?input=yaml
+echo '{key: e, payload: p2, selector: "name != actor2", labels: {name: actor2}}' | curl -d@- localhost:8000/match?input=yaml
 ```
 
 Both of these will receive the following JSON response:
+
 ```json
 {
-  "payloads": {
-    "actor2": "p2",
-    "actor1": "p1"
+ "requests": [
+  {
+   "labels": { "name": "actor2" },
+   "payload": "p2"
+  },
+  {
+   "labels": { "name": "actor1" },
+   "payload": "p1"
   }
+ ]
 }
 ```
 
@@ -68,23 +75,23 @@ Both of these will receive the following JSON response:
 **Note 2**: Because we set `input=yaml` parameters are parsed from request body. Alternatively, we could use JSON request body, or URL queries only. Using URL queries, we would rewrite the last 2 requests:
 
 ```bash
-curl "http://localhost:8000/match?key=e&payload=p1&actor=actor1" &
-curl "http://localhost:8000/match?key=e&payload=p2&actor=actor2" &
+curl 'http://localhost:8000/match?key=e&payload=p1&selector=name!%3Dn1&labels=name%3Dn1' &
+curl 'http://localhost:8000/match?key=e&payload=p2&selector=name!%3Dn2&labels=name%3Dn2' &
 ```
 
 ## Example (match two players)
 
 ```bash
-echo '{key: newGame, payload: p1, actor: player1}' | curl -d@- 0:8000/match?input=yaml &
-echo '{key: newGame, payload: p2, actor: player2}' | curl -d@- 0:8000/match?input=yaml &
+echo '{key: newGame, selector: "id != player1", labels: {id: player1}}' | curl -d@- 0:8000/match?input=yaml &
+echo '{key: newGame, selector: "id != player2", labels: {id: player2}}' | curl -d@- 0:8000/match?input=yaml &
 ```
 
 ## Example (match two players and one game maker)
 
-The game maker process creates a game with gameid=123 as its payload, and sends a request for 2 matching requests:
+The game maker process creates a game with gameid=123 as its payload, and sends a request for 2 matching requests (`count: 2`):
 
 ```bash
-echo '{key: joinGame, payload: "gameid=123", actor: gameMaker, count: 2}' | curl -d@- 0:8000/match?input=yaml &
+echo '{key: joinGame, count: 2, payload: "gameid is 123", selector: "id != gameMaker", labels: {id: gameMaker}}' | curl -d@- 0:8000/match?input=yaml &
 ```
 
 You can inspect this pending request by calling the stats endpoint:
@@ -92,42 +99,48 @@ You can inspect this pending request by calling the stats endpoint:
 ```bash
 curl http://0:8000/stats
 {
-  "joinGame": {
-    "gameMaker": {
-      "XVlBzgba": {
-        "params": {
-          "key": "joinGame",
-          "actor": "gameMaker",
-          "payload": "gameid=12345",
-          "labels": {
-            "actor": "gameMaker"
-          },
-          "selector": "actor != gameMaker",
-          "count": 2
-        },
-        "created_at": "2020-01-09T20:00:44.67685952+03:30"
-      }
-    }
+ "joinGame": {
+  "MaPEZQle": {
+   "params": {
+    "key": "joinGame",
+    "payload": "gameid is 123",
+    "labels": {
+     "id": "gameMaker"
+    },
+    "selector": "id != gameMaker",
+    "count": 2
+   },
+   "created_at": "2020-01-10T21:31:47.346538739+03:30"
   }
+ }
 }
 ```
 
 Finally, lets add the two players:
 
 ```bash
-echo '{key: joinGame, payload: p1, actor: player1, count: 2}' | curl -d@- 0:8000/match?input=yaml &
-echo '{key: joinGame, payload: p2, actor: player2, count: 2}' | curl -d@- 0:8000/match?input=yaml &
+echo '{key: joinGame, count: 2, selector: "id != player1", labels: {id: player1}}' | curl -d@- 0:8000/match?input=yaml &
+echo '{key: joinGame, count: 2, selector: "id != player2", labels: {id: player2}}' | curl -d@- 0:8000/match?input=yaml &
 ```
 
 All three processes (players and the game maker) will receive this response:
 
 ```json
 {
-  "payloads": {
-    "gameMaker": "gameid=12345",
-    "player1": "p1",
-    "player2": "p2"
+ "requests": [
+  {
+   "labels": { "id": "player2" },
+   "payload": ""
+  },
+  {
+   "labels": { "id": "player1" },
+   "payload": ""
+  },
+  {
+   "labels": { "id": "gameMaker" },
+   "payload": "gameid is 123"
   }
+ ]
 }
 ```
 

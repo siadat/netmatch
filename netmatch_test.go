@@ -23,9 +23,8 @@ func paramsToURL(p netmatch.Params) string {
 		labels = append(labels, strings.Join([]string{k, v}, "="))
 	}
 
-	return fmt.Sprintf("/match?key=%s&actor=%s&payload=%s&labels=%s&selector=%s",
+	return fmt.Sprintf("/match?key=%s&payload=%s&labels=%s&selector=%s",
 		url.QueryEscape(p.Key),
-		url.QueryEscape(p.Actor),
 		url.QueryEscape(p.Payload),
 		url.QueryEscape(strings.Join(labels, ",")),
 		url.QueryEscape(p.Selector),
@@ -37,16 +36,18 @@ func TestBasic(t *testing.T) {
 
 	requests := []netmatch.Params{
 		{
-			Key:     "e",
-			Actor:   "a1",
-			Payload: "v1",
-			Count:   1,
+			Key:      "e",
+			Labels:   map[string]string{"name": "a1"},
+			Selector: "name != a1",
+			Payload:  "v1",
+			Count:    1,
 		},
 		{
-			Key:     "e",
-			Actor:   "a2",
-			Payload: "v2",
-			Count:   1,
+			Key:      "e",
+			Labels:   map[string]string{"name": "a2"},
+			Selector: "name != a2",
+			Payload:  "v2",
+			Count:    1,
 		},
 	}
 
@@ -64,9 +65,9 @@ func TestBasic(t *testing.T) {
 
 			outValue := <-ch
 
-			require.Equal(t, len(requests), len(outValue.Payloads), fmt.Sprintf("%+v", outValue))
-			require.Equal(t, "v1", outValue.Payloads["a1"])
-			require.Equal(t, "v2", outValue.Payloads["a2"])
+			require.Equal(t, len(requests), len(outValue.Requests), fmt.Sprintf("%+v", outValue))
+			require.Contains(t, outValue.Requests, netmatch.MatchValueItem{Labels: map[string]string{"name": "a1"}, Payload: "v1"})
+			require.Contains(t, outValue.Requests, netmatch.MatchValueItem{Labels: map[string]string{"name": "a2"}, Payload: "v2"})
 		}(p)
 	}
 	wg.Wait()
@@ -78,25 +79,28 @@ func TestBasicTriplet(t *testing.T) {
 	ctx, _ := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	requests := []netmatch.Params{
 		{
-			Key:     "e",
-			Actor:   "a1",
-			Payload: "v1",
-			Count:   2,
-			Context: ctx,
+			Key:      "e",
+			Labels:   map[string]string{"name": "a1"},
+			Selector: "name != a1",
+			Payload:  "v1",
+			Count:    2,
+			Context:  ctx,
 		},
 		{
-			Key:     "e",
-			Actor:   "a2",
-			Payload: "v2",
-			Count:   2,
-			Context: ctx,
+			Key:      "e",
+			Labels:   map[string]string{"name": "a2"},
+			Selector: "name != a1",
+			Payload:  "v2",
+			Count:    2,
+			Context:  ctx,
 		},
 		{
-			Key:     "e",
-			Actor:   "a3",
-			Payload: "v3",
-			Count:   2,
-			Context: ctx,
+			Key:      "e",
+			Labels:   map[string]string{"name": "a3"},
+			Selector: "name != a1",
+			Payload:  "v3",
+			Count:    2,
+			Context:  ctx,
 		},
 	}
 
@@ -114,10 +118,10 @@ func TestBasicTriplet(t *testing.T) {
 
 			select {
 			case outValue := <-ch:
-				require.Equal(t, len(requests), len(outValue.Payloads), fmt.Sprintf("%+v", outValue))
-				require.Equal(t, "v1", outValue.Payloads["a1"])
-				require.Equal(t, "v2", outValue.Payloads["a2"])
-				require.Equal(t, "v3", outValue.Payloads["a3"])
+				require.Equal(t, len(requests), len(outValue.Requests), fmt.Sprintf("%+v", outValue))
+				require.Contains(t, outValue.Requests, netmatch.MatchValueItem{Labels: map[string]string{"name": "a1"}, Payload: "v1"})
+				require.Contains(t, outValue.Requests, netmatch.MatchValueItem{Labels: map[string]string{"name": "a2"}, Payload: "v2"})
+				require.Contains(t, outValue.Requests, netmatch.MatchValueItem{Labels: map[string]string{"name": "a3"}, Payload: "v3"})
 			case <-ctx.Done():
 			}
 
@@ -137,14 +141,16 @@ func TestHttpBasic(t *testing.T) {
 
 	requests := []netmatch.Params{
 		{
-			Key:     "e",
-			Actor:   "a1",
-			Payload: "v1",
+			Key:      "e",
+			Labels:   map[string]string{"name": "a1"},
+			Selector: "name != a1",
+			Payload:  "v1",
 		},
 		{
-			Key:     "e",
-			Actor:   "a2",
-			Payload: "v2",
+			Key:      "e",
+			Labels:   map[string]string{"name": "a2"},
+			Selector: "name != a2",
+			Payload:  "v2",
 		},
 	}
 
@@ -164,13 +170,13 @@ func TestHttpBasic(t *testing.T) {
 			require.NoError(t, err)
 			resp.Body.Close()
 
-			outValue := netmatch.OutValue{}
+			outValue := netmatch.MatchValue{}
 			err = json.Unmarshal(body, &outValue)
 			require.NoError(t, err)
 
-			require.Equal(t, len(requests), len(outValue.Payloads), fmt.Sprintf("%+v", outValue))
-			require.Equal(t, "v1", outValue.Payloads["a1"])
-			require.Equal(t, "v2", outValue.Payloads["a2"])
+			require.Equal(t, len(requests), len(outValue.Requests), fmt.Sprintf("%+v", outValue))
+			require.Contains(t, outValue.Requests, netmatch.MatchValueItem{Labels: map[string]string{"name": "a1"}, Payload: "v1"})
+			require.Contains(t, outValue.Requests, netmatch.MatchValueItem{Labels: map[string]string{"name": "a2"}, Payload: "v2"})
 		}(p)
 	}
 	wg.Wait()
@@ -187,14 +193,16 @@ func TestHttpMustBlock(t *testing.T) {
 
 	requests := []netmatch.Params{
 		{
-			Key:     "e",
-			Actor:   "a", // same actor
-			Payload: "v",
+			Key:      "e",
+			Labels:   map[string]string{"name": "a"}, // same actor
+			Selector: "name != a",
+			Payload:  "v",
 		},
 		{
-			Key:     "e",
-			Actor:   "a", // same actor
-			Payload: "v",
+			Key:      "e",
+			Labels:   map[string]string{"name": "a"}, // same actor
+			Selector: "name != a",
+			Payload:  "v",
 		},
 	}
 
@@ -236,15 +244,15 @@ func TestHttpMustBlockBecauseOfSelector(t *testing.T) {
 			wantBlock: true,
 			requests: []netmatch.Params{
 				{
-					Key:     "e",
-					Actor:   "a1",
-					Payload: "v",
-					Count:   1,
-					Labels:  map[string]string{"label1": "value1"},
+					Key:      "e",
+					Labels:   map[string]string{"name": "a1", "label1": "value1"},
+					Selector: "name != a1",
+					Payload:  "v",
+					Count:    1,
 				},
 				{
 					Key:      "e",
-					Actor:    "a2",
+					Labels:   map[string]string{"name": "a2"},
 					Payload:  "v",
 					Count:    1,
 					Selector: "label1 != value1", // a2 doens't like requests where label1=value1
@@ -255,15 +263,15 @@ func TestHttpMustBlockBecauseOfSelector(t *testing.T) {
 			wantBlock: false,
 			requests: []netmatch.Params{
 				{
-					Key:     "e",
-					Actor:   "a1",
-					Payload: "v",
-					Count:   1,
-					Labels:  map[string]string{"label1": "value1"},
+					Key:      "e",
+					Labels:   map[string]string{"name": "a1", "label1": "value1"},
+					Selector: "name != a1",
+					Payload:  "v",
+					Count:    1,
 				},
 				{
 					Key:      "e",
-					Actor:    "a2",
+					Labels:   map[string]string{"name": "a2"},
 					Payload:  "v",
 					Count:    1,
 					Selector: "label1 == value1", // a2 only matches with label1=value1
@@ -301,9 +309,7 @@ func TestHttpMustBlockBecauseOfSelector(t *testing.T) {
 
 					outValue := <-ch
 
-					require.Equal(t, len(tt.requests), len(outValue.Payloads), fmt.Sprintf("%+v", outValue))
-					// require.Equal(t, "v1", outValue.Payloads["a1"])
-					// require.Equal(t, "v2", outValue.Payloads["a2"])
+					require.Equal(t, len(tt.requests), len(outValue.Requests), fmt.Sprintf("%+v", outValue))
 				}
 			}(p)
 		}
@@ -322,22 +328,25 @@ func TestCount(t *testing.T) {
 			wantBlock: false,
 			requests: []netmatch.Params{
 				{
-					Key:     "e",
-					Actor:   "a1",
-					Payload: "v",
-					Count:   2,
+					Key:      "e",
+					Labels:   map[string]string{"name": "a1"},
+					Selector: "name != a1",
+					Payload:  "v",
+					Count:    2,
 				},
 				{
-					Key:     "e",
-					Actor:   "a2",
-					Payload: "v",
-					Count:   2,
+					Key:      "e",
+					Labels:   map[string]string{"name": "a2"},
+					Selector: "name != a2",
+					Payload:  "v",
+					Count:    2,
 				},
 				{
-					Key:     "e",
-					Actor:   "a3",
-					Payload: "v",
-					Count:   2,
+					Key:      "e",
+					Labels:   map[string]string{"name": "a3"},
+					Selector: "name != a3",
+					Payload:  "v",
+					Count:    2,
 				},
 			},
 		},
@@ -345,33 +354,18 @@ func TestCount(t *testing.T) {
 			wantBlock: true,
 			requests: []netmatch.Params{
 				{
-					Key:     "e",
-					Actor:   "a1",
-					Payload: "v",
-					Count:   2,
+					Key:      "e",
+					Labels:   map[string]string{"name": "a1"},
+					Selector: "name != a1",
+					Payload:  "v",
+					Count:    2,
 				},
 				{
-					Key:     "e",
-					Actor:   "a2",
-					Payload: "v",
-					Count:   2,
-				},
-			},
-		},
-		{
-			wantBlock: false,
-			requests: []netmatch.Params{
-				{
-					Key:     "e",
-					Actor:   "a1",
-					Payload: "v",
-					Count:   1,
-				},
-				{
-					Key:     "e",
-					Actor:   "a2",
-					Payload: "v",
-					Count:   1,
+					Key:      "e",
+					Labels:   map[string]string{"name": "a2"},
+					Selector: "name != a2",
+					Payload:  "v",
+					Count:    2,
 				},
 			},
 		},
@@ -379,10 +373,30 @@ func TestCount(t *testing.T) {
 			wantBlock: false,
 			requests: []netmatch.Params{
 				{
-					Key:     "e",
-					Actor:   "a1",
-					Payload: "v",
-					Count:   0,
+					Key:      "e",
+					Labels:   map[string]string{"name": "a1"},
+					Selector: "name != a1",
+					Payload:  "v",
+					Count:    1,
+				},
+				{
+					Key:      "e",
+					Labels:   map[string]string{"name": "a2"},
+					Selector: "name != a2",
+					Payload:  "v",
+					Count:    1,
+				},
+			},
+		},
+		{
+			wantBlock: false,
+			requests: []netmatch.Params{
+				{
+					Key:      "e",
+					Labels:   map[string]string{"name": "a1"},
+					Selector: "name != a1",
+					Payload:  "v",
+					Count:    0,
 				},
 			},
 		},
@@ -403,13 +417,14 @@ func TestCount(t *testing.T) {
 					defer wg.Done()
 
 					if tt.wantBlock {
-						ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+						ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 						defer cancel()
 
 						p.Context = ctx
 
 						ch, err := nm.Match(p)
 						require.NoError(t, err)
+
 						select {
 						case <-ch:
 						case <-p.Context.Done():
@@ -422,9 +437,7 @@ func TestCount(t *testing.T) {
 
 						outValue := <-ch
 
-						require.Equal(t, len(tt.requests), len(outValue.Payloads), fmt.Sprintf("%+v", outValue))
-						// require.Equal(t, "v1", outValue.Payloads["a1"])
-						// require.Equal(t, "v2", outValue.Payloads["a2"])
+						require.Equal(t, len(tt.requests), len(outValue.Requests), fmt.Sprintf("%+v", outValue))
 					}
 				}(i, p)
 			}

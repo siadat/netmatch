@@ -1,6 +1,6 @@
 test: dependencies
 	# -parallel 1
-	go test -race -count 1 -v ./...
+	go test -failfast -race -count 1 -v ./...
 
 serve:
 	go run cmd/netmatch/main.go :8000
