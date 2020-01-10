@@ -68,8 +68,8 @@ Both of these will receive the following JSON response:
 **Note 1**: These two requests matched and synced together because the following conditions are met:
 
 - **Identical keys**: the keys are the same, i.e., `e`, and;
-- **Selector 1 matches label 2**: 1st request's selector (default: `actor != actor1`) matches 2nd request's label (default: `actor = actor2`), and;
-- **Selector 2 matches label 1**: 2nd request's selector (default: `actor != actor2`) matches 1st request's label (default: `actor = actor1`), and;
+- **Selector 1 matches label 2**: 1st request's selector (`name != actor1`) matches 2nd request's label (`name = actor2`), and;
+- **Selector 2 matches label 1**: 2nd request's selector (`name != actor2`) matches 1st request's label (`name = actor1`), and;
 - **Enough matching requests**: each request is asking for 1 other request to match (because the default value of `count` is 1) and there are already 2 requests.
 
 **Note 2**: Because we set `input=yaml` parameters are parsed from request body. Alternatively, we could use JSON request body, or URL queries only. Using URL queries, we would rewrite the last 2 requests:
@@ -183,7 +183,6 @@ Feel free to open an issue if you think you don't understand it yet, or send a P
 ## Concepts
 
 - Key: A key is used to identify which requests can be matched with each other.
-- Actor: An actor is a client's name. It is used as a label to filter who can match who. ACtor option might get deprecated in favor of labels.
 - Count: The number of other requests that are expected to be present for match to happen. A match could require 1, 2, or more matching requests.
 - Selector: A selector is used in a request to specify the desired requests it wants to match with.
 - Label: Each request has one or several labels that other requests use with their selectors to see if they are interested in a match.
@@ -213,20 +212,8 @@ This is a URL query parameter that specifies the format in which params are prov
 **Required** Requests with identical keys are matched. See labels and
 selectors for more fine-grained control over matching.
 
-### actor
-**Required** The name of the process issuing the request.
-This is sent to each matching request when a match is made to label their payloads with a name.
-
 ### payload
 The data that are shared with every matched requests when a match is made.
-For example, if actor1's payload is payload1 and actor2's payload is payload2, both actors will receive the following JSON object when they sync together:
-
-    {
-      "payloads": {
-        "acto1":"payload1",
-        "acto2":"payload2"
-      }
-    }
 
 ### count
 The value of `count` indicates the number of other requests
@@ -237,16 +224,13 @@ and more means 4 or more requests are required to be present.
 The default value is 1.
 
 ### selector
-Selectors filter what requests do or do not match with a request. E.g., an actor (a Netmatch client) might only want to match with the requests of a particular actor.
+Selectors filter what requests do or do not match with a request. E.g., a request might only want to match with the requests with or without a particular label.
 The formatting is identical to that of the [Labels and Selectors][k8s_labels_and_selectors] of Kubernetes.
-
-The default selector is `actor != $MyActorName`, i.e., don't match me with another request from myself.
 
 ### labels
 Labels are used by selectors (see above).
-They are a comma separated list of `key1=value1,key2=value2` items.
-
-The default label is `actor = $MyActorName`
+When input=json and input=yaml, labels are given using a key-value map.
+When input=url, they are a comma separated list of `key1=value1,key2=value2` items.
 
 ## Using the Go API
 
@@ -254,17 +238,19 @@ The default label is `actor = $MyActorName`
 nm := netmatch.NewNetmatch()
 defer nm.Close()
 
+ctx, cancel := context.WithCancel(context.Background)
+defer cancel()
+
 readyChan, err := nm.Match(netmatch.Params{
-  Actor: "player1",
   Key: "joinGame",
   Count: 1,
   Labels: map[string]string{
-          "id":   "1",
-          "kind": "player",
+    "id":   "1",
+    "kind": "player",
   },
   Selector: "kind == player && id != 1",
   Payload: "I want to join a game with another player",
-  Context: context.Background(),
+  Context: ctx,
 })
 
 if err != nil {
@@ -273,7 +259,7 @@ if err != nil {
 
 select {
   case output := <-readyChan: // match made!
-  case <-ctx.Done(): // cancelled
+  case <-ctx.Done():          // cancelled
 }
 ```
 
