@@ -1,6 +1,5 @@
 test: dependencies
 	go test -race -count 1 -v ./...
-	golint
 
 serve:
 	go run cmd/netsync/main.go :8000
