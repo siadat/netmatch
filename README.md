@@ -259,4 +259,4 @@ This tool is inspired by the ideas in [CSP][csp_homepage] and Go unbuffered chan
 While it does provide features that are not available in other tools (e.g., allowing more than two clients to synchronize)
 traditional services are probably better off with async, buffered message queues.
 Feel free to let me know how you use Netsync in your project.
-Tested PRs and issues are all welcome. :)
+Issues and PRs are welcome. :)
