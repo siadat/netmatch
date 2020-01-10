@@ -2,9 +2,11 @@
 
 [![GoDoc](https://godoc.org/github.com/siadat/netsync?status.svg)][godoc]
 [![Build Status](https://travis-ci.org/siadat/netsync.svg?branch=master)][travis]
+[![Go Report Card](https://goreportcard.com/badge/github.com/siadat/netsync)][goreportcard]
 
 [godoc]:  https://godoc.org/github.com/siadat/netsync
 [travis]: https://travis-ci.org/siadat/netsync
+[goreportcard]: https://goreportcard.com/report/github.com/siadat/netsync
 [csp_homepage]: http://www.usingcsp.com/
 [k8s_labels_and_selectors]: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
 
