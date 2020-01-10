@@ -1,5 +1,5 @@
 test: dependencies
-	go test -count 1 -v -race ./...
+	go test -race -count 1 -v ./...
 
 serve:
 	go run cmd/netsync/main.go :8000

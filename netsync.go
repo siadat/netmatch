@@ -426,9 +426,7 @@ func (ns *Netsync) Send(params Params) (chan OutValue, error) {
 		return nil, err
 	}
 
-	if params.Mates == 0 {
-		params.Mates = 1
-	}
+	// if params.Mates == 0 { params.Mates = 1 }
 
 	if params.Context == nil {
 		params.Context = context.Background()

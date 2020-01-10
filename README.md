@@ -227,17 +227,23 @@ The default label is `actor = $MyActorName`
 ns := netsync.NewNetsync()
 defer ns.Close()
 
-doneChan, err := ns.Send(netsync.Params{
-  Actor: "CUST",
-  Event: "choc",
-  Payload: "Please give me a chocolate",
+readyChan, err := ns.Send(netsync.Params{
+  Actor: "player1",
+  Event: "joinGame",
+  Mates: 1,
+  Labels: map[string]string{
+          "id":   "1",
+          "kind": "player",
+  },
+  Selector: "kind == player && id != 1",
+  Payload: "I want to join a game with 1 other mate",
 })
 
 if err != nil {
   panic(err)
 }
 
-output := <-doneChan
+output := <-readyChan
 ```
 
 ## Background
