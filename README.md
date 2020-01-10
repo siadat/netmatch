@@ -34,23 +34,30 @@ netsync :8000
 Run the following in a terminal:
 
 ```bash
-curl "http://localhost:8000/event?event=e&payload=v1&actor=actor1"
+curl "http://localhost:8000/event?event=e&payload=p1&actor=actor1"
 ```
 
 In another terminal, run:
 
 ```bash
-curl "http://localhost:8000/event?event=e&payload=v2&actor=actor2"
+curl "http://localhost:8000/event?event=e&payload=p2&actor=actor2"
 ```
 
 Both of these will receive the following JSON response:
 ```json
 {
   "payloads": {
-    "actor2": "v2",
-    "actor1": "v1"
+    "actor2": "p2",
+    "actor1": "p1"
   }
 }
+```
+
+Note that you can also use the JSON or YAML input format for better readability. In YAML format, the requests above can be rewritten as:
+
+```bash
+echo '{event: e, payload: p1, actor: actor1}' | curl -d@- 0:8000/event?input=yaml &
+echo '{event: e, payload: p2, actor: actor2}' | curl -d@- 0:8000/event?input=yaml &
 ```
 
 Note that these two requests matched and synced together because the following conditions are met:
@@ -63,22 +70,22 @@ Note that these two requests matched and synced together because the following c
 ## Example: match 2 players
 
 ```bash
-curl "http://localhost:8000/event?event=newGame&payload=v1&actor=player1" &
-curl "http://localhost:8000/event?event=newGame&payload=v2&actor=player2" &
+echo '{event: newGame, payload: p1, actor: player1}' | curl -d@- 0:8000/event?input=yaml &
+echo '{event: newGame, payload: p2, actor: player2}' | curl -d@- 0:8000/event?input=yaml &
 ```
 
 ## Example: match 2 players and 1 game maker
 
-The game maker process creates a game with gameid=12345 and sends a request for 2 mates:
+The game maker process creates a game with gameid=123 as its payload, and sends a request for 2 mates:
 
 ```bash
-curl "http://localhost:8000/event?event=joinGame&payload=gameid=12345&actor=gameMaker&mates=2" &
+echo '{event: joinGame, payload: "gameid=123", actor: gameMaker, mates: 2}' | curl -d@- 0:8000/event?input=yaml &
 ```
 
 You can inspect this pending request by calling the stats endpoint:
 
 ```bash
-curl http://localhost:8000/stats
+curl http://0:8000/stats
 {
   "joinGame": {
     "gameMaker": {
@@ -103,8 +110,8 @@ curl http://localhost:8000/stats
 Finally, lets add the two players:
 
 ```bash
-curl "http://localhost:8000/event?event=joinGame&actor=player1&value=v1&mates=2" &
-curl "http://localhost:8000/event?event=joinGame&actor=player2&value=v2&mates=2" &
+echo '{event: joinGame, payload: p1, actor: player1, mates: 2}' | curl -d@- 0:8000/event?input=yaml &
+echo '{event: joinGame, payload: p2, actor: player2, mates: 2}' | curl -d@- 0:8000/event?input=yaml &
 ```
 
 All three processes (players and the game maker) will receive this response:
@@ -113,8 +120,8 @@ All three processes (players and the game maker) will receive this response:
 {
   "payloads": {
     "gameMaker": "gameid=12345",
-    "player1": "v1",
-    "player2": "v2"
+    "player1": "p1",
+    "player2": "p2"
   }
 }
 ```
@@ -174,36 +181,14 @@ This endpoint can be used to monitor the current pending/blocking requests waiti
 
 ## Options
 
-An example of a request with all options set:
-
-```bash
-curl "http://localhost:8000/event?actor=CUST&mates=1&event=choc&labels=actor%3DCUST&selector=actor!%3DCUST&payload=value"
-                                  ^          ^       ^          ^                   ^                      ^
-                                  |          |       |          |                   |                      |
-                                  actor=CUST |       |          |                   |                      |
-                                             mates=1 |          |                   |                      |
-                                                     event=choc |                   |                      |
-                                                                labels=actor%3DCUST |                      |
-                                                                       ^            |                      |
-                                                                       |            |                      |
-                                                                       actor=CUST   |                      |
-                                                                                    selector=actor!%3DCUST |
-                                                                                             ^             |
-                                                                                             |             |
-                                                                                             actor!=CUST   |
-                                                                                                           |
-                                                                                                           |
-                                                                                                           payload=value
-```
-
-### event=
+### event
 **Required** The event key. Identical events are synchronized. See labels and
 selectors for more fine-grained control over synchronization.
 
-### actor=
+### actor
 **Required** The name of the process issuing the request.
 
-### payload=
+### payload
 The data that are shared with every mate/participant when a sync match is made.
 For example, if actor1's payload is payload1 and actor2's payload is payload2, both actors will receive the following JSON object when they sync together:
 
@@ -214,7 +199,7 @@ For example, if actor1's payload is payload1 and actor2's payload is payload2, b
       }
     }
 
-### mates=
+### mates
 The value of `mates` indicates the number of other processes
 that are required to be present for an event to be synchronized. A value of 0 means no
 synchronization, 1 means a pair of processes are required to be present, 3
@@ -222,19 +207,19 @@ and more means 4 or more processes are required to be present.
 
 The default value is 1.
 
-### selector=
+### selector
 Selectors filter what events can or cannot be used for
 synchronizing. E.g., an actor (a Netsync client) might only want to sync with
 the events of a particular actor.
 The formatting is identical to that of the [Labels and Selectors][k8s_labels_and_selectors] of Kubernetes.
 
-The default selector is `actor!=$MyActorName`, i.e., don't match me with another request from myself.
+The default selector is `actor != $MyActorName`, i.e., don't match me with another request from myself.
 
-### labels=
+### labels
 Labels are used by selectors (see above).
 They are a comma separated list of `key1=value1,key2=value2` items.
 
-The default label is `actor=$MyActorName`
+The default label is `actor = $MyActorName`
 
 ## Using the Go API
 

@@ -13,30 +13,31 @@ import (
 	"sync/atomic"
 	"time"
 
+	"gopkg.in/yaml.v2"
 	"k8s.io/apimachinery/pkg/labels"
 )
 
 type Params struct {
 	// Event is the name of event. It is used to match events when syncing.
-	Event string `json:"event"`
+	Event string `json:"event" yaml:event`
 	// Actor is a label that is used to filter events when matching. It is
 	// basically a label used by the default selector.
-	Actor string `json:"actor"`
+	Actor string `json:"actor" yaml:"actor"`
 	// Payload is a string that is broadcast in the response to all events
 	// that are synced together.
-	Payload string `json:"payload"`
+	Payload string `json:"payload" yaml:"payload"`
 	// Labels are used by selector to filter what events can match each
 	// other.
-	Labels map[string]string `json:"labels"`
+	Labels map[string]string `json:"labels" yaml:"labels"`
 	// Selector is used to filter events by their labels.
 	// For example, event1 will match event2, if event2.Labels match
 	// event1.Selector.
-	Selector string `json:"selector"`
+	Selector string `json:"selector" yaml:"selector"`
 	// Mates is the number of other events that should be present in order
 	// for this event to sync with them.
-	Mates int `json:"mates"`
+	Mates int `json:"mates" yaml:"mates"`
 	// Context is used for cancelling an event.
-	Context context.Context `json:"-"`
+	Context context.Context `json:"-" yaml:"-"`
 }
 
 type eventActorMsgStruct struct {
@@ -451,6 +452,7 @@ func (ns *Netsync) NewHandler() http.Handler {
 	serveMux := http.NewServeMux()
 
 	serveMux.HandleFunc("/stats", func(rw http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
 		ns.eventToActorToRequestMap.mu.RLock()
 		defer ns.eventToActorToRequestMap.mu.RUnlock()
 
@@ -459,64 +461,116 @@ func (ns *Netsync) NewHandler() http.Handler {
 	})
 
 	serveMux.HandleFunc("/event", func(rw http.ResponseWriter, r *http.Request) {
-		rid := randStringRunes(8)
-		event := r.URL.Query().Get("event")
-		actor := r.URL.Query().Get("actor")
-		payload := r.URL.Query().Get("payload")
-		labelsMap := map[string]string{}
-
-		labelsStr := r.URL.Query().Get("labels")
-		selectorStr := r.URL.Query().Get("selector")
-
-		if len(labelsStr) == 0 {
-			labelsMap = labels.Set{"actor": actor}
-		} else {
-			for _, l := range strings.Split(labelsStr, ",") {
-				keyval := strings.Split(l, "=")
-				if len(keyval) != 2 {
-					rw.Write([]byte(fmt.Sprintf("bad label: %q\n", keyval)))
-					return
-				}
-				key := keyval[0]
-				val := keyval[1]
-				labelsMap[key] = val
-			}
-		}
-
-		mateCount := 1
-
-		if selectorStr == "" {
-			selectorStr = fmt.Sprintf("actor != %s", actor)
-		}
-
-		lq, err := labels.Parse(selectorStr)
-		if err != nil {
-			rw.Write([]byte(fmt.Sprintf("bad selector %q: %v\n", selectorStr, err)))
-			return
-		}
-
-		if r.URL.Query().Get("mates") != "" {
-			var err error
-			mateCount, err = strconv.Atoi(r.URL.Query().Get("mates"))
-			if err != nil {
-				rw.Write([]byte("mates must be int\n"))
-				return
-			}
+		inputFormat := r.URL.Query().Get("input")
+		if inputFormat == "" {
+			inputFormat = "url"
 		}
 
 		params := Params{
-			Event:    event,
-			Actor:    actor,
-			Payload:  payload,
-			Labels:   labels.Set(labelsMap),
-			Selector: selectorStr,
-			Mates:    mateCount,
-			Context:  r.Context(),
+			Mates: 1, // default
+		}
+
+		var err error
+		var lq labels.Selector
+		labelsMap := map[string]string{}
+
+		switch inputFormat {
+		case "json", "yaml":
+			switch inputFormat {
+			case "yaml":
+				decoder := yaml.NewDecoder(r.Body)
+				decoder.SetStrict(true)
+				err := decoder.Decode(&params)
+				if err != nil {
+					rw.Write([]byte(fmt.Sprintf("failed to unmarshal body: %v\n", err)))
+					return
+				}
+				defer r.Body.Close()
+			case "json":
+				decoder := json.NewDecoder(r.Body)
+				err := decoder.Decode(&params)
+				if err != nil {
+					rw.Write([]byte(fmt.Sprintf("failed to unmarshal body: %v\n", err)))
+					return
+				}
+				defer r.Body.Close()
+			}
+
+			selectorStr := params.Selector
+			params.Context = r.Context()
+
+			if len(labelsMap) == 0 {
+				labelsMap = labels.Set{"actor": params.Actor}
+			}
+
+			if len(selectorStr) == 0 {
+				selectorStr = fmt.Sprintf("actor != %s", params.Actor)
+			}
+
+			lq, err = labels.Parse(selectorStr)
+			if err != nil {
+				rw.Write([]byte(fmt.Sprintf("failed to parse selector %q: %v\n", selectorStr, err)))
+				return
+			}
+		case "url": // To be deprecated
+			r.Body.Close()
+			event := r.URL.Query().Get("event")
+			actor := r.URL.Query().Get("actor")
+			payload := r.URL.Query().Get("payload")
+
+			labelsStr := r.URL.Query().Get("labels")
+			selectorStr := r.URL.Query().Get("selector")
+
+			if len(labelsStr) == 0 {
+				labelsMap = labels.Set{"actor": actor}
+			} else {
+				for _, l := range strings.Split(labelsStr, ",") {
+					keyval := strings.Split(l, "=")
+					if len(keyval) != 2 {
+						rw.Write([]byte(fmt.Sprintf("bad label: %q\n", keyval)))
+						return
+					}
+					key := keyval[0]
+					val := keyval[1]
+					labelsMap[key] = val
+				}
+			}
+
+			mateCount := 1
+
+			if selectorStr == "" {
+				selectorStr = fmt.Sprintf("actor != %s", actor)
+			}
+
+			lq, err = labels.Parse(selectorStr)
+			if err != nil {
+				rw.Write([]byte(fmt.Sprintf("failed to parse selector %q: %v\n", selectorStr, err)))
+				return
+			}
+
+			if r.URL.Query().Get("mates") != "" {
+				var err error
+				mateCount, err = strconv.Atoi(r.URL.Query().Get("mates"))
+				if err != nil {
+					rw.Write([]byte("mates must be int\n"))
+					return
+				}
+			}
+
+			params = Params{
+				Event:    event,
+				Actor:    actor,
+				Payload:  payload,
+				Labels:   labelsMap,
+				Selector: selectorStr,
+				Mates:    mateCount,
+				Context:  r.Context(),
+			}
 		}
 
 		readyChan := make(chan OutValue)
 		ns.eventRequestChan <- eventActorMsgStruct{
-			RID:       rid,
+			RID:       randStringRunes(8),
 			Params:    params,
 			OutChan:   readyChan,
 			CreatedAt: time.Now(),
@@ -532,6 +586,7 @@ func (ns *Netsync) NewHandler() http.Handler {
 		case <-r.Context().Done():
 		}
 	})
+
 	return serveMux
 }
 
