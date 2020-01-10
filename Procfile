@@ -1,4 +1,4 @@
-netsync: go run -race cmd/netsync/main.go
+netsync: go run -race cmd/netsync/main.go :8000
 
 # client1: python raft.py node1
 # client2: python raft.py node2

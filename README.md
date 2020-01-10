@@ -12,9 +12,22 @@
 
 Netsync is a synchronized messaging system.
 It is a tool for synchronizing processes over the network via HTTP requests.
-It also provides a Go API ([Go docs][godoc]) which could be used to synchronize goroutines.
+Synchronizing two requests means that the first one is blocked until the second one arrives as well.
+Then both requests will receive a response with a payload.
 
 It may be used for matching online players in a multiplayer game server.
+
+## Comparison with Go channels
+
+Syncnet behaves similar to a Go unbuffered channel, however, there are differences:
+
+- In Go, only 2 goroutines an unbuffered channel syncs only 2 goroutines.
+  With Syncnet, we could synchronize any number of requests.
+  Also, each request could ask for a different number of matching requests, by setting the `mates` param.
+- Go channels provide no filtering of the messages for receiving goroutines.
+  Syncnet filters what requests match your request using labels and selectors.
+- Netsync is a service that can be used to handle requests coming from processes running on different servers.
+  Netsync also provides a Go API ([Go docs][godoc]) which could be used to synchronize goroutines.
 
 ## What does it do?
 
@@ -60,7 +73,7 @@ Both of these will receive the following JSON response:
 - **Identical event names**: the event names are the same, i.e., `e`, and;
 - **Selector 1 matches label 2**: 1st request's selector (default: `actor != actor1`) matches 2nd request's label (default: `actor = actor2`), and;
 - **Selector 2 matches label 1**: 2nd request's selector (default: `actor != actor2`) matches 1st request's label (default: `actor = actor1`), and;
-- **Enough mates**: each request is asking for 1 other request to sync (because the default value of `mates` is 1) and there are already 2 requests.
+- **Enough matching requests**: each request is asking for 1 other request to sync (because the default value of `mates` is 1) and there are already 2 requests.
 
 **Note 2**: Because we set `input=yaml` parameters are parsed from request body. Alternatively, we could use JSON request body, or URL queries only. Using URL queries, we would rewrite the last 2 requests:
 
