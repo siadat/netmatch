@@ -1,4 +1,5 @@
 test: dependencies
+	# -parallel 1
 	go test -race -count 1 -v ./...
 
 serve:
@@ -9,7 +10,3 @@ test_python:
 
 dependencies:
 	go get -t -v ./...
-
-all:
-	go run main.go
-	# go run -race main.go

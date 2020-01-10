@@ -20,29 +20,31 @@ import (
 // Params is a collection of parameters that can be set to configure a request
 // for sync.
 type Params struct {
-	// Event is the name of event. It is used to match events when syncing.
-	Event string `json:"event" yaml:event`
-	// Actor is a label that is used to filter events when matching. It is
+	// Key is used to match requests when matching. All matching requests must
+	// have identical keys.
+	Key string `json:"key" yaml:"key"`
+	// Actor is a label that is used to filter requests when matching. It is
 	// basically a label used by the default selector.
 	Actor string `json:"actor" yaml:"actor"`
-	// Payload is a string that is broadcast in the response to all events
-	// that are synced together.
+	// Payload is a string that is broadcast in the response to all
+	// requests that are matched together.
 	Payload string `json:"payload" yaml:"payload"`
-	// Labels are used by selector to filter what events can match each
+	// Labels are used by selector to filter what requests match each
 	// other.
 	Labels map[string]string `json:"labels" yaml:"labels"`
-	// Selector is used to filter events by their labels.
-	// For example, event1 will match event2, if event2.Labels match
-	// event1.Selector.
+	// Selector is used to filter keys by their labels.
+	// For example, request1 will match request2, if request2.Labels match
+	// request1.Selector.
 	Selector string `json:"selector" yaml:"selector"`
-	// Mates is the number of other events that should be present in order
-	// for this event to sync with them.
-	Mates int `json:"mates" yaml:"mates"`
-	// Context is used for cancelling an event.
+	// Count is the number of other requests that should be present in order
+	// for this request to match with them.
+	Count int `json:"count" yaml:"count"`
+	// Context is used by the client to let Syncnet know that the current
+	// request is cancelled and is no longer looking for a match.
 	Context context.Context `json:"-" yaml:"-"`
 }
 
-type eventActorMsgStruct struct {
+type reqStruct struct {
 	Params    Params          `json:"params"`
 	RID       string          `json:"-"`
 	OutChan   chan OutValue   `json:"-"`
@@ -52,27 +54,27 @@ type eventActorMsgStruct struct {
 	CreatedAt time.Time       `json:"created_at"`
 }
 
-// OutValue is the struct that is returned when a sync is made.
+// OutValue is the struct that is returned when a match is made.
 // The main HTTP handler uses this struct to create a JSON for the responses.
 type OutValue struct {
 	Payloads map[string]string `json:"payloads"`
 }
 
-type eventToActorToReqStruct struct {
-	Map map[string]map[string]map[string]eventActorMsgStruct
+type keyToActorToReqStruct struct {
+	Map map[string]map[string]map[string]reqStruct
 	mu  *sync.RWMutex
 }
 
-type logEventStruct struct {
+type logStruct struct {
 	Time     time.Time  `json:"time,omitempty"`
 	RID      string     `json:"rid"`
 	MatchID  string     `json:"match_id,omitempty"`
 	Msg      string     `json:"msg"`
-	Event    string     `json:"event"`
+	Key      string     `json:"key"`
 	Actor    string     `json:"actor"`
 	Selector string     `json:"selector,omitempty"`
 	Labels   labels.Set `json:"labels,omitempty"`
-	Mates    int        `json:"mates"`
+	Count    int        `json:"count"`
 	Payload  string     `json:"payload"`
 	Pending  int32      `json:"pending"`
 	Age      float64    `json:"age"`
@@ -96,9 +98,9 @@ type Netsync struct {
 	graphline   []graphLineStruct
 	graphlineMu *sync.Mutex
 
-	pendingCounter           int32
-	eventRequestChan         chan eventActorMsgStruct
-	eventToActorToRequestMap eventToActorToReqStruct
+	pendingCounter     int32
+	matchReqChan       chan reqStruct
+	keyToActorToReqMap keyToActorToReqStruct
 }
 
 // Close tears down internal goroutines to free up resources. It
@@ -120,9 +122,9 @@ func NewNetsync() *Netsync {
 
 	ns.terminateChan = make(chan struct{})
 	ns.terminateWG = sync.WaitGroup{}
-	ns.eventRequestChan = make(chan eventActorMsgStruct)
-	ns.eventToActorToRequestMap = eventToActorToReqStruct{
-		Map: make(map[string]map[string]map[string]eventActorMsgStruct),
+	ns.matchReqChan = make(chan reqStruct)
+	ns.keyToActorToReqMap = keyToActorToReqStruct{
+		Map: make(map[string]map[string]map[string]reqStruct),
 		mu:  &sync.RWMutex{},
 	}
 
@@ -134,7 +136,7 @@ func NewNetsync() *Netsync {
 			case <-ns.terminateChan:
 				return
 			case completedRID := <-cleanChan:
-				cleanMap(ns.eventToActorToRequestMap, completedRID)
+				cleanMap(ns.keyToActorToReqMap, completedRID)
 			}
 		}
 	}()
@@ -143,23 +145,23 @@ func NewNetsync() *Netsync {
 	go func() {
 		defer ns.terminateWG.Done()
 		for {
-			var eventReq eventActorMsgStruct
+			var matchReq reqStruct
 			select {
 			case <-ns.terminateChan:
 				return
-			case eventReq = <-ns.eventRequestChan:
+			case matchReq = <-ns.matchReqChan:
 			}
 
 			atomic.AddInt32(&ns.pendingCounter, 1)
-			fmt.Println(ns.newLog([]eventActorMsgStruct{eventReq}, "+", ""))
+			fmt.Println(ns.newLog([]reqStruct{matchReq}, "+", ""))
 			ns.terminateWG.Add(1)
-			go func(eventReq eventActorMsgStruct) {
+			go func(matchReq reqStruct) {
 
 				matchID := ""
 				defer func() {
 					atomic.AddInt32(&ns.pendingCounter, -1)
 					if !(ns.LogFormat == "graph" && matchID != "") {
-						fmt.Println(ns.newLog([]eventActorMsgStruct{eventReq}, "-", matchID))
+						fmt.Println(ns.newLog([]reqStruct{matchReq}, "-", matchID))
 					}
 					ns.terminateWG.Done()
 				}()
@@ -167,14 +169,14 @@ func NewNetsync() *Netsync {
 				select {
 				case <-ns.terminateChan:
 					return
-				case matchID = <-eventReq.MatchChan:
-				case <-eventReq.Params.Context.Done():
+				case matchID = <-matchReq.MatchChan:
+				case <-matchReq.Params.Context.Done():
 				}
 
 				select {
 				case <-ns.terminateChan:
 					return
-				case <-eventReq.Params.Context.Done():
+				case <-matchReq.Params.Context.Done():
 					// checking context again, even though
 					// we already had it in the previous
 					// select{} statement, because we could
@@ -183,23 +185,23 @@ func NewNetsync() *Netsync {
 					// and we want to proceed only when the
 					// request is done.
 				}
-			}(eventReq)
+			}(matchReq)
 
-			requests, ok := func(eventReq eventActorMsgStruct) ([]eventActorMsgStruct, bool) {
-				requests := []eventActorMsgStruct{eventReq}
-				if eventReq.Params.Mates == 0 {
+			requests, ok := func(matchReq reqStruct) ([]reqStruct, bool) {
+				requests := []reqStruct{matchReq}
+				if matchReq.Params.Count == 0 {
 					return requests, true
 				}
 
-				maxMateCount := eventReq.Params.Mates
-				ns.eventToActorToRequestMap.mu.RLock()
-				defer ns.eventToActorToRequestMap.mu.RUnlock()
+				maxCount := matchReq.Params.Count
+				ns.keyToActorToReqMap.mu.RLock()
+				defer ns.keyToActorToReqMap.mu.RUnlock()
 
-				if actorToRequestMap, ok := ns.eventToActorToRequestMap.Map[eventReq.Params.Event]; ok {
+				if actorToRequestMap, ok := ns.keyToActorToReqMap.Map[matchReq.Params.Key]; ok {
 					for _, actorPendingReqs := range actorToRequestMap {
 
 						for _, pendingReq := range actorPendingReqs {
-							if !eventReq.Selector.Matches(pendingReq.Labels) || !pendingReq.Selector.Matches(eventReq.Labels) {
+							if !matchReq.Selector.Matches(pendingReq.Labels) || !pendingReq.Selector.Matches(matchReq.Labels) {
 								continue
 							}
 
@@ -208,20 +210,20 @@ func NewNetsync() *Netsync {
 								continue
 							default:
 								requests = append(requests, pendingReq)
-								if maxMateCount < pendingReq.Params.Mates {
-									maxMateCount = pendingReq.Params.Mates
+								if maxCount < pendingReq.Params.Count {
+									maxCount = pendingReq.Params.Count
 								}
 							}
 
 							// -1 to exclude the current request
-							if len(requests)-1 == maxMateCount {
+							if len(requests)-1 == maxCount {
 								return requests, true
 							}
 						}
 					}
 				}
-				return []eventActorMsgStruct{}, false
-			}(eventReq)
+				return []reqStruct{}, false
+			}(matchReq)
 
 			if ok {
 				rids := make([]string, 0, len(requests))
@@ -253,32 +255,32 @@ func NewNetsync() *Netsync {
 			}
 
 			// if we are here, it means no other actor was
-			// listening, or ns.eventToActorToRequestMap has not
+			// listening, or ns.keyToActorToReqMap has not
 			// cleaned up cancelled or done requests yet.
 
 			func() {
-				ns.eventToActorToRequestMap.mu.Lock()
-				defer ns.eventToActorToRequestMap.mu.Unlock()
+				ns.keyToActorToReqMap.mu.Lock()
+				defer ns.keyToActorToReqMap.mu.Unlock()
 
-				if _, ok := ns.eventToActorToRequestMap.Map[eventReq.Params.Event]; !ok {
-					ns.eventToActorToRequestMap.Map[eventReq.Params.Event] = map[string]map[string]eventActorMsgStruct{}
+				if _, ok := ns.keyToActorToReqMap.Map[matchReq.Params.Key]; !ok {
+					ns.keyToActorToReqMap.Map[matchReq.Params.Key] = map[string]map[string]reqStruct{}
 				}
-				if _, ok := ns.eventToActorToRequestMap.Map[eventReq.Params.Event][eventReq.Params.Actor]; !ok {
-					ns.eventToActorToRequestMap.Map[eventReq.Params.Event][eventReq.Params.Actor] = map[string]eventActorMsgStruct{}
+				if _, ok := ns.keyToActorToReqMap.Map[matchReq.Params.Key][matchReq.Params.Actor]; !ok {
+					ns.keyToActorToReqMap.Map[matchReq.Params.Key][matchReq.Params.Actor] = map[string]reqStruct{}
 				}
-				ns.eventToActorToRequestMap.Map[eventReq.Params.Event][eventReq.Params.Actor][eventReq.RID] = eventReq
+				ns.keyToActorToReqMap.Map[matchReq.Params.Key][matchReq.Params.Actor][matchReq.RID] = matchReq
 
 				ns.terminateWG.Add(1)
-				go func(eventReq eventActorMsgStruct) {
+				go func(matchReq reqStruct) {
 					defer ns.terminateWG.Done()
 
 					select {
 					case <-ns.terminateChan:
 						return
-					case <-eventReq.Params.Context.Done():
-						cleanChan <- eventReq.RID
+					case <-matchReq.Params.Context.Done():
+						cleanChan <- matchReq.RID
 					}
-				}(eventReq)
+				}(matchReq)
 			}()
 
 		}
@@ -287,23 +289,23 @@ func NewNetsync() *Netsync {
 	return &ns
 }
 
-func (ns *Netsync) newLog(eventReqs []eventActorMsgStruct, msg string, matchID string) string {
+func (ns *Netsync) newLog(matchReqs []reqStruct, msg string, matchID string) string {
 	switch ns.LogFormat {
 	case "json":
-		for _, eventReq := range eventReqs {
-			return string(mustMarshalJSON(logEventStruct{
-				RID:      eventReq.RID,
-				Actor:    eventReq.Params.Actor,
-				Selector: eventReq.Selector.String(),
-				Labels:   eventReq.Labels,
-				Event:    eventReq.Params.Event,
-				Mates:    eventReq.Params.Mates,
+		for _, matchReq := range matchReqs {
+			return string(mustMarshalJSON(logStruct{
+				RID:      matchReq.RID,
+				Actor:    matchReq.Params.Actor,
+				Selector: matchReq.Selector.String(),
+				Labels:   matchReq.Labels,
+				Key:      matchReq.Params.Key,
+				Count:    matchReq.Params.Count,
 				MatchID:  matchID,
 				Pending:  atomic.LoadInt32(&ns.pendingCounter),
 				Msg:      msg,
 				Time:     time.Now(),
-				Payload:  eventReq.Params.Payload,
-				Age:      time.Since(eventReq.CreatedAt).Seconds(),
+				Payload:  matchReq.Params.Payload,
+				Age:      time.Since(matchReq.CreatedAt).Seconds(),
 			}))
 		}
 	case "graph":
@@ -325,11 +327,11 @@ func (ns *Netsync) newLog(eventReqs []eventActorMsgStruct, msg string, matchID s
 
 		switch msg {
 		case "+":
-			for _, eventReq := range eventReqs {
+			for _, matchReq := range matchReqs {
 				vacantFound := false
 				for i := range ns.graphline {
 					if !ns.graphline[i].occupied {
-						ns.graphline[i].rid = eventReq.RID
+						ns.graphline[i].rid = matchReq.RID
 						ns.graphline[i].str = StrStart
 						ns.graphline[i].occupied = true
 						vacantFound = true
@@ -338,7 +340,7 @@ func (ns *Netsync) newLog(eventReqs []eventActorMsgStruct, msg string, matchID s
 				}
 				if !vacantFound {
 					ns.graphline = append(ns.graphline, graphLineStruct{
-						rid:      eventReq.RID,
+						rid:      matchReq.RID,
 						str:      StrStart,
 						occupied: true,
 					})
@@ -351,10 +353,10 @@ func (ns *Netsync) newLog(eventReqs []eventActorMsgStruct, msg string, matchID s
 			} else {
 				chr = StdEnd
 			}
-			for _, eventReq := range eventReqs {
+			for _, matchReq := range matchReqs {
 				for i := range ns.graphline {
-					if eventReq.RID == ns.graphline[i].rid {
-						ns.graphline[i].rid = eventReq.RID
+					if matchReq.RID == ns.graphline[i].rid {
+						ns.graphline[i].rid = matchReq.RID
 						ns.graphline[i].str = chr
 						ns.graphline[i].occupied = false
 						break
@@ -381,8 +383,8 @@ func (ns *Netsync) newLog(eventReqs []eventActorMsgStruct, msg string, matchID s
 			buf.WriteString(fmt.Sprintf(" stopped"))
 		}
 
-		for _, eventReq := range eventReqs {
-			buf.WriteString(fmt.Sprintf(" [e=%s a=%s]", eventReq.Params.Event, eventReq.Params.Actor))
+		for _, matchReq := range matchReqs {
+			buf.WriteString(fmt.Sprintf(" [e=%s a=%s]", matchReq.Params.Key, matchReq.Params.Actor))
 		}
 
 		for {
@@ -404,21 +406,21 @@ func (ns *Netsync) newLog(eventReqs []eventActorMsgStruct, msg string, matchID s
 	return fmt.Sprintf("unknown format %q", ns.LogFormat)
 }
 
-// Send will dispatch an event with params.
-// This function will not block.
-// The returned channel should be used to await synchronization of this event.
+// Match will dispatch a request with the given params.
+// This function will not block. The returned channel should be used to await
+// matching of this request.
 //
-//     doneChan, err := ns.Send(netsync.Params{
+//     doneChan, err := ns.Match(netsync.Params{
 //       Actor: "CUST",
-//       Event: "choc",
+//       Key: "choc",
 //       Payload: "Please give me a chocolate",
 //     })
 //
-//     output := <-doneChan // this will block until sync
-func (ns *Netsync) Send(params Params) (chan OutValue, error) {
+//     output := <-doneChan // this will block until match is made
+func (ns *Netsync) Match(params Params) (chan OutValue, error) {
 
-	if params.Event == "" {
-		return nil, fmt.Errorf("empty event")
+	if params.Key == "" {
+		return nil, fmt.Errorf("empty key")
 	}
 
 	if params.Actor == "" {
@@ -428,20 +430,27 @@ func (ns *Netsync) Send(params Params) (chan OutValue, error) {
 	if params.Selector == "" {
 		params.Selector = fmt.Sprintf("actor != %s", params.Actor)
 	}
+	if params.Labels == nil {
+		params.Labels = make(map[string]string)
+	}
+	if len(params.Labels) == 0 {
+		params.Labels["actor"] = params.Actor
+	}
 
 	lq, err := labels.Parse(params.Selector)
 	if err != nil {
 		return nil, err
 	}
 
-	// if params.Mates == 0 { params.Mates = 1 }
+	// if params.Count == 0 { params.Count = 1 }
 
 	if params.Context == nil {
 		params.Context = context.Background()
 	}
 
+	// fmt.Printf("params = %+v\n", params)
 	readyChan := make(chan OutValue)
-	ns.eventRequestChan <- eventActorMsgStruct{
+	ns.matchReqChan <- reqStruct{
 		RID:       randStringRunes(8),
 		Params:    params,
 		Selector:  lq,
@@ -460,21 +469,21 @@ func (ns *Netsync) NewHandler() http.Handler {
 
 	serveMux.HandleFunc("/stats", func(rw http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
-		ns.eventToActorToRequestMap.mu.RLock()
-		defer ns.eventToActorToRequestMap.mu.RUnlock()
+		ns.keyToActorToReqMap.mu.RLock()
+		defer ns.keyToActorToReqMap.mu.RUnlock()
 
-		rw.Write(mustMarshalJSON(ns.eventToActorToRequestMap.Map))
+		rw.Write(mustMarshalJSON(ns.keyToActorToReqMap.Map))
 		rw.Write([]byte("\n"))
 	})
 
-	serveMux.HandleFunc("/event", func(rw http.ResponseWriter, r *http.Request) {
+	serveMux.HandleFunc("/match", func(rw http.ResponseWriter, r *http.Request) {
 		inputFormat := r.URL.Query().Get("input")
 		if inputFormat == "" {
 			inputFormat = "url"
 		}
 
 		params := Params{
-			Mates: 1, // default
+			Count: 1, // default
 		}
 
 		var err error
@@ -521,7 +530,7 @@ func (ns *Netsync) NewHandler() http.Handler {
 			}
 		case "url": // To be deprecated
 			r.Body.Close()
-			event := r.URL.Query().Get("event")
+			key := r.URL.Query().Get("key")
 			actor := r.URL.Query().Get("actor")
 			payload := r.URL.Query().Get("payload")
 
@@ -543,7 +552,7 @@ func (ns *Netsync) NewHandler() http.Handler {
 				}
 			}
 
-			mateCount := 1
+			count := 1
 
 			if selectorStr == "" {
 				selectorStr = fmt.Sprintf("actor != %s", actor)
@@ -555,28 +564,28 @@ func (ns *Netsync) NewHandler() http.Handler {
 				return
 			}
 
-			if r.URL.Query().Get("mates") != "" {
+			if r.URL.Query().Get("count") != "" {
 				var err error
-				mateCount, err = strconv.Atoi(r.URL.Query().Get("mates"))
+				count, err = strconv.Atoi(r.URL.Query().Get("count"))
 				if err != nil {
-					rw.Write([]byte("mates must be int\n"))
+					rw.Write([]byte("count must be int\n"))
 					return
 				}
 			}
 
 			params = Params{
-				Event:    event,
+				Key:      key,
 				Actor:    actor,
 				Payload:  payload,
 				Labels:   labelsMap,
 				Selector: selectorStr,
-				Mates:    mateCount,
+				Count:    count,
 				Context:  r.Context(),
 			}
 		}
 
 		readyChan := make(chan OutValue)
-		ns.eventRequestChan <- eventActorMsgStruct{
+		ns.matchReqChan <- reqStruct{
 			RID:       randStringRunes(8),
 			Params:    params,
 			OutChan:   readyChan,
@@ -597,20 +606,20 @@ func (ns *Netsync) NewHandler() http.Handler {
 	return serveMux
 }
 
-func cleanMap(eventToActorToRequestMap eventToActorToReqStruct, toBeCleanedRID string) {
-	eventToActorToRequestMap.mu.Lock()
-	defer eventToActorToRequestMap.mu.Unlock()
+func cleanMap(keyToActorToReqMap keyToActorToReqStruct, toBeCleanedRID string) {
+	keyToActorToReqMap.mu.Lock()
+	defer keyToActorToReqMap.mu.Unlock()
 
-	for _, actorToRequestMap := range eventToActorToRequestMap.Map {
+	for _, actorToRequestMap := range keyToActorToReqMap.Map {
 		for actorName, pendingRequests := range actorToRequestMap {
-			for rid, eventReq := range pendingRequests {
+			for rid, matchReq := range pendingRequests {
 				if rid == toBeCleanedRID {
 					delete(pendingRequests, rid)
 					if len(pendingRequests) == 0 {
 						delete(actorToRequestMap, actorName)
 					}
 					if len(actorToRequestMap) == 0 {
-						delete(eventToActorToRequestMap.Map, eventReq.Params.Event)
+						delete(keyToActorToReqMap.Map, matchReq.Params.Key)
 					}
 					return
 				}

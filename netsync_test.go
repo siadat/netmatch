@@ -23,8 +23,8 @@ func paramsToURL(p netsync.Params) string {
 		labels = append(labels, strings.Join([]string{k, v}, "="))
 	}
 
-	return fmt.Sprintf("/event?event=%s&actor=%s&payload=%s&labels=%s&selector=%s",
-		url.QueryEscape(p.Event),
+	return fmt.Sprintf("/match?key=%s&actor=%s&payload=%s&labels=%s&selector=%s",
+		url.QueryEscape(p.Key),
 		url.QueryEscape(p.Actor),
 		url.QueryEscape(p.Payload),
 		url.QueryEscape(strings.Join(labels, ",")),
@@ -33,20 +33,20 @@ func paramsToURL(p netsync.Params) string {
 }
 
 func TestBasic(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	requests := []netsync.Params{
 		{
-			Event:   "e",
+			Key:     "e",
 			Actor:   "a1",
 			Payload: "v1",
-			Mates:   1,
+			Count:   1,
 		},
 		{
-			Event:   "e",
+			Key:     "e",
 			Actor:   "a2",
 			Payload: "v2",
-			Mates:   1,
+			Count:   1,
 		},
 	}
 
@@ -59,7 +59,7 @@ func TestBasic(t *testing.T) {
 		go func(p netsync.Params) {
 			defer wg.Done()
 
-			ch, err := ns.Send(p)
+			ch, err := ns.Match(p)
 			require.NoError(t, err)
 
 			outValue := <-ch
@@ -73,29 +73,29 @@ func TestBasic(t *testing.T) {
 }
 
 func TestBasicTriplet(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	ctx, _ := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	requests := []netsync.Params{
 		{
-			Event:   "e",
+			Key:     "e",
 			Actor:   "a1",
 			Payload: "v1",
-			Mates:   2,
+			Count:   2,
 			Context: ctx,
 		},
 		{
-			Event:   "e",
+			Key:     "e",
 			Actor:   "a2",
 			Payload: "v2",
-			Mates:   2,
+			Count:   2,
 			Context: ctx,
 		},
 		{
-			Event:   "e",
+			Key:     "e",
 			Actor:   "a3",
 			Payload: "v3",
-			Mates:   2,
+			Count:   2,
 			Context: ctx,
 		},
 	}
@@ -109,7 +109,7 @@ func TestBasicTriplet(t *testing.T) {
 		go func(p netsync.Params) {
 			defer wg.Done()
 
-			ch, err := ns.Send(p)
+			ch, err := ns.Match(p)
 			require.NoError(t, err)
 
 			select {
@@ -127,7 +127,7 @@ func TestBasicTriplet(t *testing.T) {
 }
 
 func TestHttpBasic(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	ns := netsync.NewNetsync()
 	defer ns.Close()
@@ -137,12 +137,12 @@ func TestHttpBasic(t *testing.T) {
 
 	requests := []netsync.Params{
 		{
-			Event:   "e",
+			Key:     "e",
 			Actor:   "a1",
 			Payload: "v1",
 		},
 		{
-			Event:   "e",
+			Key:     "e",
 			Actor:   "a2",
 			Payload: "v2",
 		},
@@ -177,7 +177,7 @@ func TestHttpBasic(t *testing.T) {
 }
 
 func TestHttpMustBlock(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	ns := netsync.NewNetsync()
 	defer ns.Close()
@@ -187,12 +187,12 @@ func TestHttpMustBlock(t *testing.T) {
 
 	requests := []netsync.Params{
 		{
-			Event:   "e",
+			Key:     "e",
 			Actor:   "a", // same actor
 			Payload: "v",
 		},
 		{
-			Event:   "e",
+			Key:     "e",
 			Actor:   "a", // same actor
 			Payload: "v",
 		},
@@ -220,7 +220,7 @@ func TestHttpMustBlock(t *testing.T) {
 }
 
 func TestHttpMustBlockBecauseOfSelector(t *testing.T) {
-	// t.Parallel()
+	t.Parallel()
 
 	ns := netsync.NewNetsync()
 	defer ns.Close()
@@ -236,18 +236,18 @@ func TestHttpMustBlockBecauseOfSelector(t *testing.T) {
 			wantBlock: true,
 			requests: []netsync.Params{
 				{
-					Event:   "e",
+					Key:     "e",
 					Actor:   "a1",
 					Payload: "v",
-					Mates:   1,
+					Count:   1,
 					Labels:  map[string]string{"label1": "value1"},
 				},
 				{
-					Event:    "e",
+					Key:      "e",
 					Actor:    "a2",
 					Payload:  "v",
-					Mates:    1,
-					Selector: "label1 != value1", // a2 doens't like events where label1=value1
+					Count:    1,
+					Selector: "label1 != value1", // a2 doens't like requests where label1=value1
 				},
 			},
 		},
@@ -255,18 +255,18 @@ func TestHttpMustBlockBecauseOfSelector(t *testing.T) {
 			wantBlock: false,
 			requests: []netsync.Params{
 				{
-					Event:   "e",
+					Key:     "e",
 					Actor:   "a1",
 					Payload: "v",
-					Mates:   1,
+					Count:   1,
 					Labels:  map[string]string{"label1": "value1"},
 				},
 				{
-					Event:    "e",
+					Key:      "e",
 					Actor:    "a2",
 					Payload:  "v",
-					Mates:    1,
-					Selector: "label1 == value1", // a2 only syncs with label1=value1
+					Count:    1,
+					Selector: "label1 == value1", // a2 only matches with label1=value1
 				},
 			},
 		},
@@ -296,7 +296,7 @@ func TestHttpMustBlockBecauseOfSelector(t *testing.T) {
 					require.Error(t, err)
 					require.Error(t, ctx.Err())
 				} else {
-					ch, err := ns.Send(p)
+					ch, err := ns.Match(p)
 					require.NoError(t, err)
 
 					outValue := <-ch
@@ -311,14 +311,8 @@ func TestHttpMustBlockBecauseOfSelector(t *testing.T) {
 	}
 }
 
-func _TestMateCount(t *testing.T) {
-	// t.Parallel()
-
-	ns := netsync.NewNetsync()
-	defer ns.Close()
-
-	ts := httptest.NewServer(ns.NewHandler())
-	defer ts.Close()
+func TestCount(t *testing.T) {
+	t.Parallel()
 
 	testCases := []struct {
 		wantBlock bool
@@ -328,22 +322,22 @@ func _TestMateCount(t *testing.T) {
 			wantBlock: false,
 			requests: []netsync.Params{
 				{
-					Event:   "e",
+					Key:     "e",
 					Actor:   "a1",
 					Payload: "v",
-					Mates:   2,
+					Count:   2,
 				},
 				{
-					Event:   "e",
+					Key:     "e",
 					Actor:   "a2",
 					Payload: "v",
-					Mates:   2,
+					Count:   2,
 				},
 				{
-					Event:   "e",
+					Key:     "e",
 					Actor:   "a3",
 					Payload: "v",
-					Mates:   2,
+					Count:   2,
 				},
 			},
 		},
@@ -351,16 +345,16 @@ func _TestMateCount(t *testing.T) {
 			wantBlock: true,
 			requests: []netsync.Params{
 				{
-					Event:   "e",
+					Key:     "e",
 					Actor:   "a1",
 					Payload: "v",
-					Mates:   2,
+					Count:   2,
 				},
 				{
-					Event:   "e",
+					Key:     "e",
 					Actor:   "a2",
 					Payload: "v",
-					Mates:   2,
+					Count:   2,
 				},
 			},
 		},
@@ -368,16 +362,16 @@ func _TestMateCount(t *testing.T) {
 			wantBlock: false,
 			requests: []netsync.Params{
 				{
-					Event:   "e",
+					Key:     "e",
 					Actor:   "a1",
 					Payload: "v",
-					Mates:   1,
+					Count:   1,
 				},
 				{
-					Event:   "e",
+					Key:     "e",
 					Actor:   "a2",
 					Payload: "v",
-					Mates:   1,
+					Count:   1,
 				},
 			},
 		},
@@ -385,10 +379,10 @@ func _TestMateCount(t *testing.T) {
 			wantBlock: false,
 			requests: []netsync.Params{
 				{
-					Event:   "e",
+					Key:     "e",
 					Actor:   "a1",
 					Payload: "v",
-					Mates:   0,
+					Count:   0,
 				},
 			},
 		},
@@ -396,37 +390,46 @@ func _TestMateCount(t *testing.T) {
 
 	wg := sync.WaitGroup{}
 	for _, tt := range testCases {
-		for _, p := range tt.requests {
-			wg.Add(1)
+		func() {
+			ns := netsync.NewNetsync()
+			for i, p := range tt.requests {
+				wg.Add(1)
 
-			// this sleep is here to ensure a1 sends it's request first, so
-			// we can test if a1's selector is applied as well as a2's
-			// selector
-			time.Sleep(50 * time.Millisecond)
-			go func(p netsync.Params) {
-				defer wg.Done()
+				// this sleep is here to ensure a1 sends it's request first, so
+				// we can test if a1's selector is applied as well as a2's
+				// selector
+				time.Sleep(50 * time.Millisecond)
+				go func(i int, p netsync.Params) {
+					defer wg.Done()
 
-				if tt.wantBlock {
-					ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-					defer cancel()
+					if tt.wantBlock {
+						ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+						defer cancel()
 
-					ch, err := ns.Send(p)
-					require.NoError(t, err)
-					<-ch
+						p.Context = ctx
 
-					require.Error(t, ctx.Err())
-				} else {
-					ch, err := ns.Send(p)
-					require.NoError(t, err)
+						ch, err := ns.Match(p)
+						require.NoError(t, err)
+						select {
+						case <-ch:
+						case <-p.Context.Done():
+						}
 
-					outValue := <-ch
+						require.Error(t, p.Context.Err())
+					} else {
+						ch, err := ns.Match(p)
+						require.NoError(t, err)
 
-					require.Equal(t, len(tt.requests), len(outValue.Payloads), fmt.Sprintf("%+v", outValue))
-					// require.Equal(t, "v1", outValue.Payloads["a1"])
-					// require.Equal(t, "v2", outValue.Payloads["a2"])
-				}
-			}(p)
-		}
-		wg.Wait()
+						outValue := <-ch
+
+						require.Equal(t, len(tt.requests), len(outValue.Payloads), fmt.Sprintf("%+v", outValue))
+						// require.Equal(t, "v1", outValue.Payloads["a1"])
+						// require.Equal(t, "v2", outValue.Payloads["a2"])
+					}
+				}(i, p)
+			}
+			wg.Wait()
+			ns.Close()
+		}()
 	}
 }
