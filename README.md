@@ -31,16 +31,16 @@ go install github.com/siadat/netsync/cmd/netsync
 netsync :8000
 ```
 
-Run the following in a terminal:
+In terminal 1:
 
 ```bash
-curl "http://localhost:8000/event?event=e&payload=p1&actor=actor1"
+echo '{event: e, payload: p1, actor: actor1}' | curl -d@- localhost:8000/event?input=yaml
 ```
 
-In another terminal, run:
+In terminal 2:
 
 ```bash
-curl "http://localhost:8000/event?event=e&payload=p2&actor=actor2"
+echo '{event: e, payload: p2, actor: actor2}' | curl -d@- localhost:8000/event?input=yaml
 ```
 
 Both of these will receive the following JSON response:
@@ -53,19 +53,19 @@ Both of these will receive the following JSON response:
 }
 ```
 
-Note that you can also use the JSON or YAML input format for better readability. In YAML format, the requests above can be rewritten as:
+**Note 1**: These two requests matched and synced together because the following conditions are met:
+
+- **Identical event names**: the event names are the same, i.e., `e`, and;
+- **Selector 1 matches label 2**: 1st request's selector (default: `actor != actor1`) matches 2nd request's label (default: `actor = actor2`), and;
+- **Selector 2 matches label 1**: 2nd request's selector (default: `actor != actor2`) matches 1st request's label (default: `actor = actor1`), and;
+- **Enough mates**: each request is asking for 1 other request to sync (because the default value of `mates` is 1) and there are already 2 requests.
+
+**Note 2**: Because we set `input=yaml` parameters are parsed from request body. Alternatively, we could use JSON request body, or URL queries only. Using URL queries, we would rewrite the last 2 requests:
 
 ```bash
-echo '{event: e, payload: p1, actor: actor1}' | curl -d@- 0:8000/event?input=yaml &
-echo '{event: e, payload: p2, actor: actor2}' | curl -d@- 0:8000/event?input=yaml &
+curl "http://localhost:8000/event?event=e&payload=p1&actor=actor1" &
+curl "http://localhost:8000/event?event=e&payload=p2&actor=actor2" &
 ```
-
-Note that these two requests matched and synced together because the following conditions are met:
-
-- :white_check_mark: **event name**: The event names are identical, i.e., `e`.
-- :white_check_mark: **selector 1 and label 2 match**: 1st request's selector (default: `actor != actor1`) matches 2nd request's label (default: `actor = actor2`).
-- :white_check_mark: **selector 2 and label 1 match**: 2nd request's selector (default: `actor != actor2`) matches 1st request's label (default: `actor = actor1`).
-- :white_check_mark: **number of mates**: Each request is asking for 1 other request to sync (because the default value of `mates` is 1) and there are already 2 requests.
 
 ## Example: match 2 players
 
