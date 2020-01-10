@@ -17,6 +17,8 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 )
 
+// Params is a collection of parameters that can be set to configure a request
+// for sync.
 type Params struct {
 	// Event is the name of event. It is used to match events when syncing.
 	Event string `json:"event" yaml:event`
@@ -50,6 +52,8 @@ type eventActorMsgStruct struct {
 	CreatedAt time.Time       `json:"created_at"`
 }
 
+// OutValue is the struct that is returned when a sync is made.
+// The main HTTP handler uses this struct to create a JSON for the responses.
 type OutValue struct {
 	Payloads map[string]string `json:"payloads"`
 }
@@ -80,7 +84,10 @@ type graphLineStruct struct {
 	occupied bool
 }
 
+// Netsync is the main struct containing everything needed to run a netsync
+// server.
 type Netsync struct {
+	// LogFormat is the format of logs. Possible values are "json" and "graph" (default).
 	LogFormat string
 
 	terminateChan chan struct{}
@@ -102,6 +109,7 @@ func (ns *Netsync) Close() {
 	ns.terminateWG.Wait()
 }
 
+// NewNetsync initializes the server and returns a Netsync struct.
 func NewNetsync() *Netsync {
 	ns := Netsync{}
 
@@ -283,7 +291,7 @@ func (ns *Netsync) newLog(eventReqs []eventActorMsgStruct, msg string, matchID s
 	switch ns.LogFormat {
 	case "json":
 		for _, eventReq := range eventReqs {
-			return string(mustMarshalJson(logEventStruct{
+			return string(mustMarshalJSON(logEventStruct{
 				RID:      eventReq.RID,
 				Actor:    eventReq.Params.Actor,
 				Selector: eventReq.Selector.String(),
@@ -302,14 +310,14 @@ func (ns *Netsync) newLog(eventReqs []eventActorMsgStruct, msg string, matchID s
 		ns.graphlineMu.Lock()
 		defer ns.graphlineMu.Unlock()
 
-		LINE_STR := "│"
-		START_STR := "┌"
-		END_STR := "└"
-		CANCEL_STR := "┴"
+		StrLine := "│"
+		StrStart := "┌"
+		StdEnd := "└"
+		StrCancel := "┴"
 
 		for i := range ns.graphline {
 			if ns.graphline[i].occupied {
-				ns.graphline[i].str = LINE_STR
+				ns.graphline[i].str = StrLine
 			} else {
 				ns.graphline[i].str = " "
 			}
@@ -322,7 +330,7 @@ func (ns *Netsync) newLog(eventReqs []eventActorMsgStruct, msg string, matchID s
 				for i := range ns.graphline {
 					if !ns.graphline[i].occupied {
 						ns.graphline[i].rid = eventReq.RID
-						ns.graphline[i].str = START_STR
+						ns.graphline[i].str = StrStart
 						ns.graphline[i].occupied = true
 						vacantFound = true
 						break
@@ -331,7 +339,7 @@ func (ns *Netsync) newLog(eventReqs []eventActorMsgStruct, msg string, matchID s
 				if !vacantFound {
 					ns.graphline = append(ns.graphline, graphLineStruct{
 						rid:      eventReq.RID,
-						str:      START_STR,
+						str:      StrStart,
 						occupied: true,
 					})
 				}
@@ -339,9 +347,9 @@ func (ns *Netsync) newLog(eventReqs []eventActorMsgStruct, msg string, matchID s
 		case "-", "m":
 			var chr string
 			if msg == "-" {
-				chr = CANCEL_STR
+				chr = StrCancel
 			} else {
-				chr = END_STR
+				chr = StdEnd
 			}
 			for _, eventReq := range eventReqs {
 				for i := range ns.graphline {
@@ -446,6 +454,7 @@ func (ns *Netsync) Send(params Params) (chan OutValue, error) {
 	return readyChan, nil
 }
 
+// NewHandler is used for creating an HTTP handler for the Netsync server.
 func (ns *Netsync) NewHandler() http.Handler {
 	serveMux := http.NewServeMux()
 
@@ -454,7 +463,7 @@ func (ns *Netsync) NewHandler() http.Handler {
 		ns.eventToActorToRequestMap.mu.RLock()
 		defer ns.eventToActorToRequestMap.mu.RUnlock()
 
-		rw.Write(mustMarshalJson(ns.eventToActorToRequestMap.Map))
+		rw.Write(mustMarshalJSON(ns.eventToActorToRequestMap.Map))
 		rw.Write([]byte("\n"))
 	})
 
@@ -579,7 +588,7 @@ func (ns *Netsync) NewHandler() http.Handler {
 
 		select {
 		case out := <-readyChan:
-			rw.Write(mustMarshalJson(out))
+			rw.Write(mustMarshalJSON(out))
 			rw.Write([]byte("\n"))
 		case <-r.Context().Done():
 		}
@@ -626,7 +635,7 @@ func check(err error) {
 	}
 }
 
-func mustMarshalJson(v interface{}) []byte {
+func mustMarshalJSON(v interface{}) []byte {
 	byts, err := json.MarshalIndent(v, "", " ")
 	check(err)
 	return byts
