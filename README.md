@@ -15,8 +15,6 @@ It is a tool for synchronizing processes over the network via HTTP requests.
 Synchronizing two requests means that the first one is blocked until the second one arrives as well.
 Then both requests will receive a response with a payload.
 
-It may be used for matching online players in a multiplayer game server.
-
 ## Comparison with Go channels
 
 Syncnet behaves similar to a Go unbuffered channel, however, there are differences:
@@ -36,6 +34,12 @@ other matching processes send N other requests with the same "event" query value
 The requests might have a payload value, which is shared with all requests in
 the responses they eventually receive upon syncing.
 Matching of requests can be limited using labels and selectors.
+
+## What is it used for?
+
+It may be used for matching online players in a multiplayer game server.
+Or when 2 processes work on a shared resource (eg file) and one needs to wait for the other to prepare it.
+Or in cases where data arrives in small parts, and a function needs to work on the whole item, as opposed to a part of it.
 
 ## Quick start: sync 2 processes
 
