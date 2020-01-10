@@ -173,13 +173,20 @@ There are 2 endpoints:
 
 ### /event
 
-This is the main endpoint. Actors (ie clients) send events using this endpoint.
+This is the main endpoint. Clients send requests for synchronizing events using this endpoint.
 
 ### /stats
 
-This endpoint can be used to monitor the current pending/blocking requests waiting for a mate to sync.
+This endpoint is used to monitor the current pending/blocking requests waiting for mates to sync.
 
-## Options
+## Params
+
+### input
+This is a URL query parameter that specifies the format in which params are provided.
+
+- `&input=url` (default): look for params in the URL queries.
+- `&input=json`: look for a JSON object in the request body.
+- `&input=yaml`: look for a YAML object in the request body.
 
 ### event
 **Required** The event key. Identical events are synchronized. See labels and
