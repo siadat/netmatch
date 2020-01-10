@@ -10,39 +10,24 @@
 [csp_homepage]: http://www.usingcsp.com/
 [k8s_labels_and_selectors]: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
 
-Netsync is a tool for synchronizing processes over the network via HTTP requests.
-This is done using matching HTTP requests.
-Matching two requests means that the first one is blocked until the second one arrives as well.
-Then both requests will receive a response that includes all the values provided by the participating requests.
+- **What is Netsync?**
+  It is a tool for *matching* and *synchronizing* HTTP requests.
+- **What is synchronizing?**
+  Synchronizing two requests means that the first one is blocked until the second one arrives as well.
+- **What is matching?**
+  Only matching requests are synchronized. Matching two requests means the selectors of one matches the labels of the other.
+- **What is it used for?**
+  It could be used for matching online players in a multiplayer game server.
+  In general, it could be used in a transaction when it is requires that several
+  processes to do something together or don't do anything at all.
+- **Give me an example.**
+  One process sends an HTTP request, and it is blocked until N
+  other matching processes send N other requests with the same key.
+  The requests might have a payload value, which is shared with all requests in
+  the responses they eventually receive upon matching.
+  Matching of requests can be limited using labels and selectors.
 
-## What does it do?
-
-One process sends an HTTP request, and it is blocked until N
-other matching processes send N other requests with the same key.
-The requests might have a payload value, which is shared with all requests in
-the responses they eventually receive upon matching.
-Matching of requests can be limited using labels and selectors.
-
-## What is it used for?
-
-It could be used for matching online players in a multiplayer game server.
-
-In general, it could be used in a transaction when it is requires that several
-processes to do something together or don't do anything at all.
-
-## Comparison with Go channels
-
-Syncnet behaves similar to a Go unbuffered channel, however, there are differences:
-
-- In Go, only 2 goroutines an unbuffered channel syncs only 2 goroutines.
-  With Syncnet, we could synchronize any number of requests.
-  Also, each request could ask for a different number of matching requests, by setting the `count` param.
-- Go channels provide no filtering of the messages for receiving goroutines.
-  Syncnet filters what requests match your request using labels and selectors.
-- Netsync is a service that can be used to handle requests coming from processes running on different servers.
-  Netsync also provides a Go API ([Go docs][godoc]) which could be used to synchronize goroutines.
-
-## Quick start: sync 2 processes
+## Quick start (sync two processes)
 
 Start the server:
 
@@ -87,14 +72,14 @@ curl "http://localhost:8000/match?key=e&payload=p1&actor=actor1" &
 curl "http://localhost:8000/match?key=e&payload=p2&actor=actor2" &
 ```
 
-## Example: match 2 players
+## Example (match two players)
 
 ```bash
 echo '{key: newGame, payload: p1, actor: player1}' | curl -d@- 0:8000/match?input=yaml &
 echo '{key: newGame, payload: p2, actor: player2}' | curl -d@- 0:8000/match?input=yaml &
 ```
 
-## Example: match 2 players and 1 game maker
+## Example (match two players and one game maker)
 
 The game maker process creates a game with gameid=123 as its payload, and sends a request for 2 matching requests:
 
@@ -177,8 +162,10 @@ We want this EVENT to be synchronized across the two processes, so, the desired 
 Notice that p1.log3 moved further down in the timeline, from time=5 to time=7.
 When p1.EVENT happens, Process 1 is blocked for 2 time-units and p1.log3 is not executed until p2.EVENT is executed as well.
 
-To acheive this in Syncnet, Process 1 should send a match request with key=EVENT before p1.log3,
+To achieve this in Syncnet, Process 1 should send a match request with key=EVENT before p1.log3,
 and Process 2 should send a match request with key=EVENT before p2.log5
+
+Feel free to open an issue if you think you don't understand it yet, or send a PR if you have good explanations and examples.
 
 ## Concepts
 
@@ -276,6 +263,18 @@ select {
   case <-ctx.Done(): // cancelled
 }
 ```
+
+## Comparison with Go channels
+
+Syncnet behaves similar to a Go unbuffered channel, however, there are differences:
+
+- In Go, only 2 goroutines an unbuffered channel syncs only 2 goroutines.
+  With Syncnet, we could synchronize any number of requests.
+  Also, each request could ask for a different number of matching requests, by setting the `count` param.
+- Go channels provide no filtering of the messages for receiving goroutines.
+  Syncnet filters what requests match your request using labels and selectors.
+- Netsync is a service that can be used to handle requests coming from processes running on different servers.
+  Netsync also provides a Go API ([Go docs][godoc]) which could be used to synchronize goroutines.
 
 ## Background
 
