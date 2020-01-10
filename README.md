@@ -11,9 +11,24 @@
 [k8s_labels_and_selectors]: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
 
 Netsync is a tool for synchronizing processes over the network via HTTP requests.
-This is done using matching HTTP requestss.
+This is done using matching HTTP requests.
 Matching two requests means that the first one is blocked until the second one arrives as well.
 Then both requests will receive a response that includes all the values provided by the participating requests.
+
+## What does it do?
+
+One process sends an HTTP request, and it is blocked until N
+other matching processes send N other requests with the same key.
+The requests might have a payload value, which is shared with all requests in
+the responses they eventually receive upon matching.
+Matching of requests can be limited using labels and selectors.
+
+## What is it used for?
+
+It could be used for matching online players in a multiplayer game server.
+
+In general, it could be used in a transaction when it is requires that several
+processes to do something together or don't do anything at all.
 
 ## Comparison with Go channels
 
@@ -26,19 +41,6 @@ Syncnet behaves similar to a Go unbuffered channel, however, there are differenc
   Syncnet filters what requests match your request using labels and selectors.
 - Netsync is a service that can be used to handle requests coming from processes running on different servers.
   Netsync also provides a Go API ([Go docs][godoc]) which could be used to synchronize goroutines.
-
-## What does it do?
-
-One process sends an HTTP request, and it is blocked until N
-other matching processes send N other requests with the same "key" query value.
-The requests might have a payload value, which is shared with all requests in
-the responses they eventually receive upon matching.
-Matching of requests can be limited using labels and selectors.
-
-## What is it used for?
-
-It may be used for matching online players in a multiplayer game server.
-In general, it should be used when 2 or more processes depend on each other.
 
 ## Quick start: sync 2 processes
 
