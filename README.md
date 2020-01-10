@@ -155,7 +155,7 @@ When p1.Event happens, Process 1 is blocked for 2 time-units and p1.log3 is not 
 ## Concepts
 
 - Event: An event is used to identify which requests can be matched with each other.
-- Actor: An actor is a client's name. It is used as a label to filter who can match who. This might be removed in favor of labels.
+- Actor: An actor is a client's name. It is used as a label to filter who can match who. ACtor option might get deprecated in favor of labels.
 - Mate: A mate is the other side of the match. A match could require 1, 2, or more mates.
 - Selector: A selector is used in a request to specify the desired requests it wants to match with.
 - Label: Each request has one or several labels that other requests use with their selectors to see if they are interested in a match.
