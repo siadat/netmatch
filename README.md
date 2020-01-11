@@ -4,7 +4,7 @@
 
 [![GoDoc](https://godoc.org/github.com/siadat/netmatch?status.svg)][godoc]
 [![Build Status](https://travis-ci.org/siadat/netmatch.svg?branch=master)][travis]
-[![Go Report Card](https://goreportcard.com/badge/github.com/siadat/netmatch)][goreportcard]
+[![Go Report Card](https://goreportcard.com/badge/github.com/siadat/netsync)][goreportcard]
 
 [godoc]:  https://godoc.org/github.com/siadat/netmatch
 [travis]: https://travis-ci.org/siadat/netmatch
