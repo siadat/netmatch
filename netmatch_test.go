@@ -15,6 +15,7 @@ import (
 
 	"github.com/siadat/netmatch"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 )
 
 func paramsToURL(p netmatch.Params) string {
@@ -29,6 +30,10 @@ func paramsToURL(p netmatch.Params) string {
 		url.QueryEscape(strings.Join(labels, ",")),
 		url.QueryEscape(p.Selector),
 	)
+}
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m, goleak.IgnoreTopFunction("k8s.io/klog.(*loggingT).flushDaemon"))
 }
 
 func TestBasic(t *testing.T) {
