@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v2"
-	"k8s.io/apimachinery/pkg/labels"
 )
 
 // Params is a collection of parameters that can be set to configure a request
@@ -41,14 +40,23 @@ type Params struct {
 	Context context.Context `json:"-" yaml:"-"`
 }
 
+type LabelSelector interface {
+	Matches(map[string]string) bool
+	String() string
+}
+
+type LabelSelectorParser interface {
+	Parse(string) (LabelSelector, error)
+}
+
 type reqStruct struct {
-	Params      Params          `json:"params"`
-	RID         string          `json:"-"`
-	MatchChan   chan MatchValue `json:"-"`
-	MatchIDChan chan string     `json:"-"`
-	Selector    labels.Selector `json:"-"`
-	Labels      labels.Set      `json:"-"`
-	CreatedAt   time.Time       `json:"created_at"`
+	Params      Params            `json:"params"`
+	RID         string            `json:"-"`
+	MatchChan   chan MatchValue   `json:"-"`
+	MatchIDChan chan string       `json:"-"`
+	Selector    LabelSelector     `json:"-"`
+	Labels      map[string]string `json:"-"`
+	CreatedAt   time.Time         `json:"created_at"`
 }
 
 // MatchValue is the struct that is returned when a match is made.
@@ -70,17 +78,17 @@ type keyToReqStruct struct {
 }
 
 type logStruct struct {
-	Time     time.Time  `json:"time,omitempty"`
-	RID      string     `json:"rid"`
-	MatchID  string     `json:"match_id,omitempty"`
-	Msg      string     `json:"msg"`
-	Key      string     `json:"key"`
-	Selector string     `json:"selector,omitempty"`
-	Labels   labels.Set `json:"labels,omitempty"`
-	Count    int        `json:"count"`
-	Payload  string     `json:"payload"`
-	Pending  int32      `json:"pending"`
-	Age      float64    `json:"age"`
+	Time     time.Time         `json:"time,omitempty"`
+	RID      string            `json:"rid"`
+	MatchID  string            `json:"match_id,omitempty"`
+	Msg      string            `json:"msg"`
+	Key      string            `json:"key"`
+	Selector string            `json:"selector,omitempty"`
+	Labels   map[string]string `json:"labels,omitempty"`
+	Count    int               `json:"count"`
+	Payload  string            `json:"payload"`
+	Pending  int32             `json:"pending"`
+	Age      float64           `json:"age"`
 }
 
 type graphLineStruct struct {
@@ -101,9 +109,10 @@ type Netmatch struct {
 	graphline   []graphLineStruct
 	graphlineMu *sync.Mutex
 
-	pendingCounter int32
-	matchReqChan   chan reqStruct
-	keyToReqMap    keyToReqStruct
+	pendingCounter      int32
+	matchReqChan        chan reqStruct
+	keyToReqMap         keyToReqStruct
+	labelSelectorParser LabelSelectorParser
 }
 
 // Close tears down internal goroutines to free up resources. It
@@ -120,6 +129,7 @@ func NewNetmatch() *Netmatch {
 
 	nm.LogFormat = "graph"
 	nm.graphlineMu = &sync.Mutex{}
+	nm.labelSelectorParser = k8sSelectorParser{}
 
 	nm.terminateChan = make(chan struct{})
 	nm.terminateWG = sync.WaitGroup{}
@@ -415,7 +425,7 @@ func (nm *Netmatch) Match(params Params) (chan MatchValue, error) {
 		return nil, fmt.Errorf("empty labels")
 	}
 
-	lq, err := labels.Parse(params.Selector)
+	lq, err := nm.labelSelectorParser.Parse(params.Selector)
 	if err != nil {
 		return nil, err
 	}
@@ -431,7 +441,7 @@ func (nm *Netmatch) Match(params Params) (chan MatchValue, error) {
 		RID:         randStringRunes(8),
 		Params:      params,
 		Selector:    lq,
-		Labels:      labels.Set(params.Labels),
+		Labels:      params.Labels,
 		MatchChan:   readyChan,
 		CreatedAt:   time.Now(),
 		MatchIDChan: make(chan string),
@@ -464,7 +474,7 @@ func (nm *Netmatch) NewHandler() http.Handler {
 		}
 
 		var err error
-		var lq labels.Selector
+		var lq LabelSelector
 
 		switch inputFormat {
 		case "json", "yaml":
@@ -500,7 +510,7 @@ func (nm *Netmatch) NewHandler() http.Handler {
 				return
 			}
 
-			lq, err = labels.Parse(params.Selector)
+			lq, err = nm.labelSelectorParser.Parse(params.Selector)
 			if err != nil {
 				rw.Write([]byte(fmt.Sprintf("failed to parse selector %q: %v\n", params.Selector, err)))
 				return
@@ -537,7 +547,7 @@ func (nm *Netmatch) NewHandler() http.Handler {
 
 			count := 1
 
-			lq, err = labels.Parse(selectorStr)
+			lq, err = nm.labelSelectorParser.Parse(selectorStr)
 			if err != nil {
 				rw.Write([]byte(fmt.Sprintf("failed to parse selector %q: %v\n", selectorStr, err)))
 				return
@@ -570,7 +580,7 @@ func (nm *Netmatch) NewHandler() http.Handler {
 			CreatedAt:   time.Now(),
 			MatchIDChan: make(chan string),
 			Selector:    lq,
-			Labels:      labels.Set(params.Labels),
+			Labels:      params.Labels,
 		}
 
 		select {
