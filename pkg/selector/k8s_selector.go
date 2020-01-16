@@ -1,10 +1,15 @@
-package netmatch
+package selector
 
 import "k8s.io/apimachinery/pkg/labels"
 
-type k8sSelectorParser struct{}
+type labelSelector = interface {
+	Matches(map[string]string) bool
+	String() string
+}
 
-func (k8sSelectorParser) Parse(selector string) (LabelSelector, error) {
+type K8sSelectorParser struct{}
+
+func (K8sSelectorParser) Parse(selector string) (labelSelector, error) {
 	lq, err := labels.Parse(selector)
 	if err != nil {
 		return nil, err

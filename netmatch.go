@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/siadat/netmatch/pkg/selector"
 	"gopkg.in/yaml.v2"
 )
 
@@ -40,12 +41,12 @@ type Params struct {
 	Context context.Context `json:"-" yaml:"-"`
 }
 
-type LabelSelector interface {
+type LabelSelector = interface {
 	Matches(map[string]string) bool
 	String() string
 }
 
-type LabelSelectorParser interface {
+type LabelSelectorParser = interface {
 	Parse(string) (LabelSelector, error)
 }
 
@@ -129,7 +130,7 @@ func NewNetmatch() *Netmatch {
 
 	nm.LogFormat = "graph"
 	nm.graphlineMu = &sync.Mutex{}
-	nm.labelSelectorParser = k8sSelectorParser{}
+	nm.labelSelectorParser = selector.K8sSelectorParser{}
 
 	nm.terminateChan = make(chan struct{})
 	nm.terminateWG = sync.WaitGroup{}
@@ -425,7 +426,7 @@ func (nm *Netmatch) Match(params Params) (chan MatchValue, error) {
 		return nil, fmt.Errorf("empty labels")
 	}
 
-	lq, err := nm.labelSelectorParser.Parse(params.Selector)
+	lSelector, err := nm.labelSelectorParser.Parse(params.Selector)
 	if err != nil {
 		return nil, err
 	}
@@ -440,7 +441,7 @@ func (nm *Netmatch) Match(params Params) (chan MatchValue, error) {
 	nm.matchReqChan <- reqStruct{
 		RID:         randStringRunes(8),
 		Params:      params,
-		Selector:    lq,
+		Selector:    lSelector,
 		Labels:      params.Labels,
 		MatchChan:   readyChan,
 		CreatedAt:   time.Now(),
@@ -474,7 +475,7 @@ func (nm *Netmatch) NewHandler() http.Handler {
 		}
 
 		var err error
-		var lq LabelSelector
+		var lSelector LabelSelector
 
 		switch inputFormat {
 		case "json", "yaml":
@@ -510,7 +511,7 @@ func (nm *Netmatch) NewHandler() http.Handler {
 				return
 			}
 
-			lq, err = nm.labelSelectorParser.Parse(params.Selector)
+			lSelector, err = nm.labelSelectorParser.Parse(params.Selector)
 			if err != nil {
 				rw.Write([]byte(fmt.Sprintf("failed to parse selector %q: %v\n", params.Selector, err)))
 				return
@@ -547,7 +548,7 @@ func (nm *Netmatch) NewHandler() http.Handler {
 
 			count := 1
 
-			lq, err = nm.labelSelectorParser.Parse(selectorStr)
+			lSelector, err = nm.labelSelectorParser.Parse(selectorStr)
 			if err != nil {
 				rw.Write([]byte(fmt.Sprintf("failed to parse selector %q: %v\n", selectorStr, err)))
 				return
@@ -579,7 +580,7 @@ func (nm *Netmatch) NewHandler() http.Handler {
 			MatchChan:   readyChan,
 			CreatedAt:   time.Now(),
 			MatchIDChan: make(chan string),
-			Selector:    lq,
+			Selector:    lSelector,
 			Labels:      params.Labels,
 		}
 
