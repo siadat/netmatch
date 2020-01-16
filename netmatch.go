@@ -46,7 +46,7 @@ type LabelSelector = interface {
 	String() string
 }
 
-type LabelSelectorParser = interface {
+type LabelSelectorParser interface {
 	Parse(string) (LabelSelector, error)
 }
 
