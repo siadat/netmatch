@@ -99,7 +99,24 @@ echo '{key: joinGame, count: 2, payload: "gameid is 123", selector: "id != gameM
 You can inspect this pending request by calling the stats endpoint:
 
 ```bash
-curl http://0:8000/stats
+curl http://0:8000/stats?output=yaml
+```
+
+```yaml
+joinGame:
+  MaPEZQle:
+    params:
+      key: joinGame
+      payload: gameid is 123
+      labels:
+        id: gameMaker
+      selector: id != gameMaker
+      count: 2
+    created_at: 2020-01-18T00:13:17.353203964+03:30
+```
+
+<!--
+```json
 {
  "joinGame": {
   "MaPEZQle": {
@@ -117,6 +134,7 @@ curl http://0:8000/stats
  }
 }
 ```
+-->
 
 Finally, lets add the two players:
 
