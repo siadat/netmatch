@@ -9,10 +9,12 @@ import (
 )
 
 func main() {
-	var addr = os.Args[1]
-	fmt.Printf("Listening on %s\n", addr)
+	var httpAddr = os.Args[1]
+	nm := netmatch.NewNetmatch()
+	defer nm.Close()
 
-	err := http.ListenAndServe(addr, netmatch.NewNetmatch().NewHandler())
+	fmt.Printf("Listening for HTTP requests on %s\n", httpAddr)
+	err := http.ListenAndServe(httpAddr, nm.NewHTTPHandler())
 	if err != nil {
 		panic(err)
 	}

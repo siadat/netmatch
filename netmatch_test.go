@@ -141,7 +141,7 @@ func TestHttpBasic(t *testing.T) {
 	nm := netmatch.NewNetmatch()
 	defer nm.Close()
 
-	ts := httptest.NewServer(nm.NewHandler())
+	ts := httptest.NewServer(nm.NewHTTPHandler())
 	defer ts.Close()
 
 	requests := []netmatch.Params{
@@ -193,7 +193,7 @@ func TestHttpMustBlock(t *testing.T) {
 	nm := netmatch.NewNetmatch()
 	defer nm.Close()
 
-	ts := httptest.NewServer(nm.NewHandler())
+	ts := httptest.NewServer(nm.NewHTTPHandler())
 	defer ts.Close()
 
 	requests := []netmatch.Params{
@@ -238,7 +238,7 @@ func TestHttpMustBlockBecauseOfSelector(t *testing.T) {
 	nm := netmatch.NewNetmatch()
 	defer nm.Close()
 
-	ts := httptest.NewServer(nm.NewHandler())
+	ts := httptest.NewServer(nm.NewHTTPHandler())
 	defer ts.Close()
 
 	testCases := []struct {

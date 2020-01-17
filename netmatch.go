@@ -51,13 +51,13 @@ type LabelSelectorParser interface {
 }
 
 type reqStruct struct {
-	Params      Params            `json:"params"`
-	RID         string            `json:"-"`
-	MatchChan   chan MatchValue   `json:"-"`
-	MatchIDChan chan string       `json:"-"`
-	Selector    LabelSelector     `json:"-"`
-	Labels      map[string]string `json:"-"`
-	CreatedAt   time.Time         `json:"created_at"`
+	Params      Params            `json:"params" yaml:"params"`
+	RID         string            `json:"-" yaml:"-"`
+	MatchChan   chan MatchValue   `json:"-" yaml:"-"`
+	MatchIDChan chan string       `json:"-" yaml:"-"`
+	Selector    LabelSelector     `json:"-" yaml:"-"`
+	Labels      map[string]string `json:"-" yaml:"-"`
+	CreatedAt   time.Time         `json:"created_at" yaml:"created_at"`
 }
 
 // MatchValue is the struct that is returned when a match is made.
@@ -451,21 +451,34 @@ func (nm *Netmatch) Match(params Params) (chan MatchValue, error) {
 	return readyChan, nil
 }
 
-// NewHandler is used for creating an HTTP handler for the Netmatch server.
-func (nm *Netmatch) NewHandler() http.Handler {
+// NewHTTPHandler is used for creating an HTTP handler for the Netmatch server.
+func (nm *Netmatch) NewHTTPHandler() http.Handler {
 	serveMux := http.NewServeMux()
 
 	serveMux.HandleFunc("/stats", func(rw http.ResponseWriter, r *http.Request) {
+		outputFormat := r.URL.Query().Get("output")
+
 		defer r.Body.Close()
 		nm.keyToReqMap.mu.RLock()
 		defer nm.keyToReqMap.mu.RUnlock()
 
-		rw.Write(mustMarshalJSON(nm.keyToReqMap.Map))
-		rw.Write([]byte("\n"))
+		fmt.Printf("outputFormat = %+v\n", outputFormat)
+		switch outputFormat {
+		case "json":
+			rw.Write(mustMarshalJSON(nm.keyToReqMap.Map))
+			rw.Write([]byte("\n"))
+		case "yaml":
+			rw.Write(mustMarshalYAML(nm.keyToReqMap.Map))
+		default:
+			rw.Write(mustMarshalJSON(nm.keyToReqMap.Map))
+			rw.Write([]byte("\n"))
+		}
 	})
 
 	serveMux.HandleFunc("/match", func(rw http.ResponseWriter, r *http.Request) {
 		inputFormat := r.URL.Query().Get("input")
+		outputFormat := r.URL.Query().Get("output")
+
 		if inputFormat == "" {
 			inputFormat = "url"
 		}
@@ -586,8 +599,16 @@ func (nm *Netmatch) NewHandler() http.Handler {
 
 		select {
 		case out := <-readyChan:
-			rw.Write(mustMarshalJSON(out))
-			rw.Write([]byte("\n"))
+			switch outputFormat {
+			case "json":
+				rw.Write(mustMarshalJSON(out))
+				rw.Write([]byte("\n"))
+			case "yaml":
+				rw.Write(mustMarshalYAML(nm.keyToReqMap.Map))
+			default:
+				rw.Write(mustMarshalJSON(out))
+				rw.Write([]byte("\n"))
+			}
 		case <-r.Context().Done():
 		}
 	})
@@ -624,6 +645,12 @@ func check(err error) {
 	if err != nil {
 		panic(err)
 	}
+}
+
+func mustMarshalYAML(v interface{}) []byte {
+	byts, err := yaml.Marshal(v)
+	check(err)
+	return byts
 }
 
 func mustMarshalJSON(v interface{}) []byte {

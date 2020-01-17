@@ -210,6 +210,10 @@ This is a URL query parameter that specifies the format in which params are prov
 - `&input=json`: look for a JSON object in the request body.
 - `&input=yaml`: look for a YAML object in the request body.
 
+### output
+Specify the format of the output. Valid values are json and yaml.
+The default value is json.
+
 ### key
 **Required** Requests with identical keys are matched. See labels and
 selectors for more fine-grained control over matching.
