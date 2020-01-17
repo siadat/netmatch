@@ -262,7 +262,7 @@ When input=url, they are a comma separated list of `key1=value1,key2=value2` ite
 nm := netmatch.NewNetmatch()
 defer nm.Close()
 
-ctx, cancel := context.WithCancel(context.Background)
+ctx, cancel := context.WithCancel(context.Background())
 defer cancel()
 
 readyChan, err := nm.Match(netmatch.Params{
@@ -272,7 +272,7 @@ readyChan, err := nm.Match(netmatch.Params{
     "id":   "1",
     "kind": "player",
   },
-  Selector: "kind == player && id != 1",
+  Selector: "kind = player, id != 1",
   Payload: "I want to join a game with another player",
   Context: ctx,
 })
@@ -283,6 +283,7 @@ if err != nil {
 
 select {
   case output := <-readyChan: // match made!
+    fmt.Printf("output: %+v\n", output)
   case <-ctx.Done():          // cancelled
 }
 ```
