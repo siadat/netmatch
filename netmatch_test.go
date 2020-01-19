@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ghodss/yaml"
 	"github.com/siadat/netmatch"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -135,7 +136,7 @@ func TestBasicTriplet(t *testing.T) {
 	wg.Wait()
 }
 
-func TestHttpBasic(t *testing.T) {
+func TestHttpJsonBasic(t *testing.T) {
 	t.Parallel()
 
 	nm := netmatch.NewNetmatch()
@@ -177,6 +178,58 @@ func TestHttpBasic(t *testing.T) {
 
 			outValue := netmatch.MatchValue{}
 			err = json.Unmarshal(body, &outValue)
+			require.NoError(t, err)
+
+			require.Equal(t, len(requests), len(outValue.Requests), fmt.Sprintf("%+v", outValue))
+			require.Contains(t, outValue.Requests, netmatch.MatchValueItem{Labels: map[string]string{"name": "a1"}, Payload: "v1"})
+			require.Contains(t, outValue.Requests, netmatch.MatchValueItem{Labels: map[string]string{"name": "a2"}, Payload: "v2"})
+		}(p)
+	}
+	wg.Wait()
+}
+
+func TestHttpYamlBasic(t *testing.T) {
+	t.Parallel()
+
+	nm := netmatch.NewNetmatch()
+	defer nm.Close()
+
+	ts := httptest.NewServer(nm.NewHTTPHandler())
+	defer ts.Close()
+
+	requests := []netmatch.Params{
+		{
+			Key:      "e",
+			Labels:   map[string]string{"name": "a1"},
+			Selector: "name != a1",
+			Payload:  "v1",
+		},
+		{
+			Key:      "e",
+			Labels:   map[string]string{"name": "a2"},
+			Selector: "name != a2",
+			Payload:  "v2",
+		},
+	}
+
+	client := ts.Client()
+	wg := sync.WaitGroup{}
+	for _, p := range requests {
+		wg.Add(1)
+		go func(p netmatch.Params) {
+			defer wg.Done()
+
+			resp, err := client.Get(ts.URL + paramsToURL(p) + "&output=yaml")
+			require.NoError(t, err)
+
+			require.Equal(t, 200, resp.StatusCode)
+
+			body, err := ioutil.ReadAll(resp.Body)
+			require.NoError(t, err)
+			resp.Body.Close()
+
+			outValue := netmatch.MatchValue{}
+			err = yaml.Unmarshal(body, &outValue)
 			require.NoError(t, err)
 
 			require.Equal(t, len(requests), len(outValue.Requests), fmt.Sprintf("%+v", outValue))

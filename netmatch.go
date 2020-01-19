@@ -51,13 +51,13 @@ type LabelSelectorParser interface {
 }
 
 type reqStruct struct {
+	CreatedAt   time.Time         `json:"created_at" yaml:"created_at"`
 	Params      Params            `json:"params" yaml:"params"`
 	RID         string            `json:"-" yaml:"-"`
 	MatchChan   chan MatchValue   `json:"-" yaml:"-"`
 	MatchIDChan chan string       `json:"-" yaml:"-"`
 	Selector    LabelSelector     `json:"-" yaml:"-"`
 	Labels      map[string]string `json:"-" yaml:"-"`
-	CreatedAt   time.Time         `json:"created_at" yaml:"created_at"`
 }
 
 // MatchValue is the struct that is returned when a match is made.
@@ -462,7 +462,6 @@ func (nm *Netmatch) NewHTTPHandler() http.Handler {
 		nm.keyToReqMap.mu.RLock()
 		defer nm.keyToReqMap.mu.RUnlock()
 
-		fmt.Printf("outputFormat = %+v\n", outputFormat)
 		switch outputFormat {
 		case "json":
 			rw.Write(mustMarshalJSON(nm.keyToReqMap.Map))
@@ -604,7 +603,7 @@ func (nm *Netmatch) NewHTTPHandler() http.Handler {
 				rw.Write(mustMarshalJSON(out))
 				rw.Write([]byte("\n"))
 			case "yaml":
-				rw.Write(mustMarshalYAML(nm.keyToReqMap.Map))
+				rw.Write(mustMarshalYAML(out))
 			default:
 				rw.Write(mustMarshalJSON(out))
 				rw.Write([]byte("\n"))
