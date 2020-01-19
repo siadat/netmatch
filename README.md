@@ -93,7 +93,7 @@ echo '{key: newGame, selector: "id != player2", labels: {id: player2}}' | curl -
 The game maker process creates a game with gameid=123 as its payload, and sends a request for 2 matching requests (`count: 2`):
 
 ```bash
-echo '{key: joinGame, count: 2, payload: "gameid is 123", selector: "id != gameMaker", labels: {id: gameMaker}}' | curl -d@- 0:8000/match?input=yaml &
+echo '{key: joinGame, count: 2, payload: "gameid is 123", selector: "id != gameMaker", labels: {id: gameMaker}}' | curl -d@- 0:8000/match?input=yaml
 ```
 
 You can inspect this pending request by calling the stats endpoint:
@@ -139,12 +139,26 @@ joinGame:
 Finally, lets add the two players:
 
 ```bash
-echo '{key: joinGame, count: 2, selector: "id != player1", labels: {id: player1}}' | curl -d@- 0:8000/match?input=yaml &
-echo '{key: joinGame, count: 2, selector: "id != player2", labels: {id: player2}}' | curl -d@- 0:8000/match?input=yaml &
+echo '{key: joinGame, count: 2, selector: "id != player1", labels: {id: player1}}' | curl -d@- 0:8000/match?input=yaml
+echo '{key: joinGame, count: 2, selector: "id != player2", labels: {id: player2}}' | curl -d@- 0:8000/match?input=yaml
 ```
 
-All three processes (players and the game maker) will receive this response:
+All three processes (players and the game maker) will receive this response (in JSON or YAML):
 
+```yaml
+requests:
+- labels:
+    id: player2
+  payload: ""
+- labels:
+    id: gameMaker
+  payload: gameid is 123
+- labels:
+    id: player1
+  payload: ""
+```
+
+<!--
 ```json
 {
  "requests": [
@@ -163,6 +177,7 @@ All three processes (players and the game maker) will receive this response:
  ]
 }
 ```
+-->
 
 ## I still don't get it...
 
