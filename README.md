@@ -17,17 +17,18 @@
 - **What is synchronizing?**
   Synchronizing two requests means that the first one is blocked until the second one arrives as well.
 - **What is matching?**
-  Only matching requests are synchronized. Matching two requests means the selectors of one matches the labels of the other.
+  Only matching requests are synchronized.
+  Two requests match if the selectors of one matches the labels of the other.
 - **Give me an example.**
-  One process sends an HTTP request, and it is blocked until N
-  other matching processes send N other requests with the same key.
-  The requests might have a payload value, which is shared with all requests in
-  the responses they eventually receive upon matching.
-  Matching of requests can be limited using labels and selectors.
+  Someone sends an HTTP request to netmatch, their request is blocked (i.e., no response is given) until N
+  other requests are made to netmatch (that match each other).
 - **What is it used for?**
   It could be used for matching online players in a multiplayer game server.
-  In general, it could be used in a transaction when it is requires that several
-  processes to do something or nothing at all.
+  In general, it could be used in a transaction when it is required that
+  something should be done only if N events occur (ie it should not happen if N-1 or less events occur).
+- **What else?**
+  The requests have a payload value, which is shared with all requesters in
+  the responses they eventually receive upon matching.
 
 ## Quick start (sync two processes)
 
