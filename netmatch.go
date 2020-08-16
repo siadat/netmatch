@@ -36,7 +36,7 @@ type Params struct {
 	// Count is the number of other requests that should be present in order
 	// for this request to match with them.
 	Count int `json:"count" yaml:"count"`
-	// Context is used by the client to let Syncnet know that the current
+	// Context is used by the client to let netmatch know that the current
 	// request is cancelled and is no longer looking for a match.
 	Context context.Context `json:"-" yaml:"-"`
 }

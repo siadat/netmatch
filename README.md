@@ -30,6 +30,43 @@
   The requests have a payload value, which is shared with all requesters in
   the responses they eventually receive upon matching.
 
+## Explanation
+
+Suppose we have two programs running concurrently,
+and these processes are required to synchronize on an event "EVENT" before proceeding.
+The logs of these processes could look like this (without synchronization):
+
+    time  Process 1  Process 2
+    ----  ---------  ---------
+    1     p1.log1    p2.log1
+    2                p2.log2
+    3     p1.log2
+    4     p1.EVENT   p2.log3
+    5     p1.log3    p2.log4
+    6                p2.EVENT
+    7                p2.log5
+
+We want the two EVENTs to be synchronized across the two processes,
+so, the desired log should look like (with synchronization):
+
+    time  Process 1  Process 2
+    ----  ---------  ---------
+    1     p1.log1    p2.log1
+    2                p2.log2
+    3     p1.log2
+    4   ┌>p1.EVENT   p2.log3
+    5   │            p2.log4
+    6   └───────────>p2.EVENT
+    7     p1.log3    p2.log5
+
+Notice that p1.log3 moved further down in the timeline (from time=5 to time=7).
+When p1.EVENT happens, Process 1 is blocked for 2 time-units and p1.log3 is not executed until p2.EVENT is executed as well.
+
+To achieve this in netmatch, Process 1 should send a match request with key=EVENT before p1.log3,
+and Process 2 should send a match request with key=EVENT before p2.log5
+
+Feel free to open an issue if you think you don't understand it yet, or send a PR if you have good explanations and examples.
+
 ## Quick start (sync two processes)
 
 Start the server:
@@ -180,41 +217,6 @@ requests:
 ```
 -->
 
-## I still don't get it...
-
-Suppose we have two programs running concurrently,
-and these processes are required to synchronize on EVENT before proceeding.
-The logs of these processes could look like this (without synchronization):
-
-    time  Process 1  Process 2
-    ----  ---------  ---------
-    1     p1.log1    p2.log1
-    2                p2.log2
-    3     p1.log2
-    4     p1.EVENT   p2.log3
-    5     p1.log3    p2.log4
-    6                p2.EVENT
-    7                p2.log5
-
-We want this EVENT to be synchronized across the two processes, so, the desired log should look like (with synchronization):
-
-    time  Process 1  Process 2
-    ----  ---------  ---------
-    1     p1.log1    p2.log1
-    2                p2.log2
-    3     p1.log2
-    4   ┌>p1.EVENT   p2.log3
-    5   │            p2.log4
-    6   └───────────>p2.EVENT
-    7     p1.log3    p2.log5
-
-Notice that p1.log3 moved further down in the timeline, from time=5 to time=7.
-When p1.EVENT happens, Process 1 is blocked for 2 time-units and p1.log3 is not executed until p2.EVENT is executed as well.
-
-To achieve this in Syncnet, Process 1 should send a match request with key=EVENT before p1.log3,
-and Process 2 should send a match request with key=EVENT before p2.log5
-
-Feel free to open an issue if you think you don't understand it yet, or send a PR if you have good explanations and examples.
 
 ## Concepts
 
@@ -306,17 +308,16 @@ select {
 
 ## Comparison with Go channels
 
-Syncnet behaves similar to a Go unbuffered channel, however, there are differences:
+netmatch behaves similar to a Go unbuffered channel, however, there are differences:
 
-- In Go, only 2 goroutines an unbuffered channel syncs only 2 goroutines.
-  With Syncnet, we could synchronize any number of requests.
+- In Go, only an unbuffered channel syncs only 2 goroutines.
+  With netmatch, we could synchronize any number of requests.
   Also, each request could ask for a different number of matching requests, by setting the `count` param.
 - Go channels provide no filtering of the messages for receiving goroutines.
-  Syncnet filters what requests match your request using labels and selectors.
+  netmatch filters what requests match your request using labels and selectors.
 - Netmatch is a service that can be used to handle requests coming from processes running on different servers.
   Netmatch also provides a Go API ([Go docs][godoc]) which could be used to synchronize goroutines.
 
 ## Background
 
 This tool is inspired by the ideas in [CSP][csp_homepage] and Go unbuffered channels.
-Issues and PRs are welcome. :)
